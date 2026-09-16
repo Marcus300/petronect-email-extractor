@@ -12,7 +12,7 @@
   <br>
   <img src="https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white" alt="Python 3.10+">
   <img src="https://img.shields.io/badge/versão-0.0.1.1-blue" alt="Versão 0.0.1.1">
-  <img src="https://img.shields.io/badge/status-em%20validação-orange" alt="Status em validação">
+  <img src="https://img.shields.io/badge/status-estável-brightgreen" alt="Status estável">
   <img src="https://img.shields.io/badge/licença-MIT-yellow" alt="Licença MIT">
   <a href="https://github.com/marcus300/petronect-email-extractor/releases/latest"><img src="https://img.shields.io/badge/release-latest-2ea44f" alt="Última release"></a>
 </div>
@@ -29,6 +29,7 @@
   - [Atualizações pelo GitHub](#atualizações-pelo-github)
 - [Como usar](#como-usar)
 - [Funcionalidades](#funcionalidades)
+- [Última release](#última-release)
 - [Roadmap](#roadmap)
 - [Testes](#testes)
 - [Releases e versões anteriores](#releases-e-versões-anteriores)
@@ -119,9 +120,19 @@ O executável é criado em `dist/Petronect Email Extractor v0.0.1.1.exe`. O usu�
 - Registra ambiente, critérios, contagens e erros detalhados no log.
 - Permite cancelar a execução e abrir o Excel gerado.
 
+<h2 id="última-release">Última release</h2>
+
+A versão atual é **0.0.1.1**. A página da release contém o executável para Windows, as notas da versão e os arquivos-fonte correspondentes à tag publicada.
+
+<p align="center">
+  <a href="https://github.com/Marcus300/petronect-email-extractor/releases/latest"><strong>Acessar a página de download da última release »</strong></a>
+</p>
+
+As versões anteriores continuam disponíveis no [histórico completo de releases](https://github.com/Marcus300/petronect-email-extractor/releases).
+
 <h2 id="roadmap">Roadmap</h2>
 
-- [ ] Incluir o remetente (`Sender`) nos dados extraídos e no Excel.
+- [ ] Incluir o remetente (`Sender`) no painel de pesquisa.
 - [ ] Substituir o campo livre de assunto por uma lista suspensa com os assuntos padrão das notificações Petronect.
 - [ ] Criar layouts de Excel específicos para modelos diferentes das notificações de sala de colaboração.
 

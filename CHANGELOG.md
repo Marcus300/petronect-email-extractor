@@ -2,7 +2,7 @@
 
 Este projeto segue tags no formato `vMAJOR.MINOR.PATCH.REVISION`. As versões publicadas permanecem disponíveis no histórico de releases do GitHub.
 
-## [0.0.1.1] — Em validação
+## [0.0.1.1] — 2026-09-16
 
 ### Adicionado
 
