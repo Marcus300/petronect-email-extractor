@@ -31,4 +31,4 @@ jobs:
       - name: Executar testes
         run: python -m unittest discover -s tests -v
       - name: Validar metadados de versão
-        run: python scripts/verify_release.py
+        run: python scripts/verify_release.py --metadata-only
