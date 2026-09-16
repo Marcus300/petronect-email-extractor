@@ -1,0 +1,20 @@
+changelog:
+  exclude:
+    labels:
+      - ignore-for-release
+      - documentation-only
+    authors:
+      - dependabot
+  categories:
+    - title: "⚠️ Alterações incompatíveis"
+      labels: [breaking-change]
+    - title: "✨ Novas funcionalidades"
+      labels: [enhancement, feature]
+    - title: "🐛 Correções"
+      labels: [bug, fix]
+    - title: "🔒 Segurança"
+      labels: [security]
+    - title: "📦 Dependências"
+      labels: [dependencies]
+    - title: "🛠️ Outras alterações"
+      labels: ["*"]

@@ -1,0 +1,48 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyd
+.venv/
+.venv-*/
+venv/
+env/
+.env
+.env.*
+!.env.example
+.python-version
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# Build outputs
+build/
+dist/
+*.spec
+*.egg-info/
+*.manifest
+*.log
+
+# Runtime outputs
+output/
+logs/
+*_log.txt
+*.xlsx
+~$*.xlsx
+
+# Editors and OS
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store
+Desktop.ini
+*.swp
+*.tmp
+*.bak
+
+# Local GitHub CLI and release artifacts
+.github-token
+release-assets/
