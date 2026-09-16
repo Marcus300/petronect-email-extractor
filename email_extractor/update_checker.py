@@ -1,8 +1,4 @@
-"""Update-checking infrastructure.
-
-Network access is intentionally disabled until the project has a public GitHub
-repository. Enabling it later requires setting both constants below.
-"""
+"""Query the official GitHub repository for the latest published release."""
 
 from dataclasses import dataclass
 import json

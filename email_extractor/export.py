@@ -28,7 +28,7 @@ def export_xlsx(
         sheet.append([record.received_at, record.subject, record.email_id, record.tipo, record.mensagem])
         count += 1
         if on_progress and count % 25 == 0:
-            on_progress(f"{count} email(ns) encontrado(s); preparando Excel")
+            on_progress(f"{count} email(s) encontrado(s); preparando Excel")
     sheet.freeze_panes = "A2"
     sheet.auto_filter.ref = sheet.dimensions
     sheet.column_dimensions["A"].width = 25

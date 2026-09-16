@@ -13,7 +13,7 @@ from .diagnostics import format_exception, runtime_metadata
 from .export import export_xlsx
 from .models import SearchCriteria
 from .outlook import OutlookEmailSource, OutlookUnavailableError
-from .update_checker import check_for_updates
+from .update_checker import UpdateStatus, check_for_updates
 from .version import __version__
 
 
@@ -44,6 +44,12 @@ class ExtractorWindow:
         self.worker: Thread | None = None
         self.log_file_path: Path | None = None
         self.latest_output_path: Path | None = None
+        self.update_status: UpdateStatus | None = None
+        self.update_check_in_progress = False
+        self.update_notification_version = ""
+        self.about_popup: tk.Toplevel | None = None
+        self.latest_version_label: ttk.Label | None = None
+        self.update_button: ttk.Button | None = None
         self._folder_options: dict[str, str] = {}
         self._build()
         self._load_mailboxes()
@@ -156,9 +162,7 @@ class ExtractorWindow:
             selected = date.today()
         popup = tk.Toplevel(self.root)
         popup.title("Selecionar data")
-        # The calendar is an auxiliary dialog and intentionally has no icon.
-        popup.blank_icon = tk.PhotoImage(width=1, height=1)
-        popup.iconphoto(False, popup.blank_icon)
+        self._set_icon_for(popup)
         popup.transient(self.root)
         popup.resizable(False, False)
         month = [selected.year, selected.month]
@@ -207,12 +211,18 @@ class ExtractorWindow:
         )
 
     def _show_about(self) -> None:
+        if self.about_popup is not None and self.about_popup.winfo_exists():
+            self.about_popup.lift()
+            self.about_popup.focus_force()
+            return
         popup = tk.Toplevel(self.root)
+        self.about_popup = popup
         popup.title("About - Petronect Email Extractor")
         self._set_icon_for(popup)
         popup.transient(self.root)
         popup.resizable(False, False)
         popup.geometry("640x540")
+        popup.protocol("WM_DELETE_WINDOW", self._close_about)
         content = ttk.Frame(popup, padding=22)
         content.pack(fill="both", expand=True)
         content.columnconfigure(1, weight=1)
@@ -256,16 +266,72 @@ class ExtractorWindow:
             justify="left",
             wraplength=555,
         ).pack(anchor="w")
-        ttk.Label(
-            content,
-            text="Verificação de atualizações pelo GitHub: habilitada.",
-        ).grid(row=7, column=0, columnspan=2, sticky="w", pady=(14, 0))
+        self.latest_version_label = ttk.Label(content, text="Última versão: consultando...")
+        self.latest_version_label.grid(row=7, column=0, columnspan=2, sticky="w", pady=(14, 0))
         actions = ttk.Frame(content)
         actions.grid(row=8, column=0, columnspan=2, sticky="e", pady=(18, 0))
-        ttk.Button(actions, text="Verificar atualizações", command=self._start_update_check).pack(side="left", padx=(0, 8))
+        self.update_button = ttk.Button(actions, text="Atualizar", command=self._open_update, state="disabled")
+        self.update_button.pack(side="left", padx=(0, 8))
+        ttk.Button(actions, text="Fechar", command=self._close_about).pack(side="left")
+        self._refresh_update_controls()
+
+    def _close_about(self) -> None:
+        if self.about_popup is not None and self.about_popup.winfo_exists():
+            self.about_popup.destroy()
+        self.about_popup = None
+        self.latest_version_label = None
+        self.update_button = None
+
+    def _refresh_update_controls(self) -> None:
+        if self.latest_version_label is None or not self.latest_version_label.winfo_exists():
+            return
+        if self.update_check_in_progress:
+            text = "Última versão: consultando..."
+            button_state = "disabled"
+        elif self.update_status is None:
+            text = "Última versão: indisponível"
+            button_state = "disabled"
+        else:
+            text = f"Última versão: {self.update_status.latest_version or 'indisponível'}"
+            button_state = "normal" if self.update_status.update_available else "disabled"
+        self.latest_version_label.configure(text=text)
+        if self.update_button is not None and self.update_button.winfo_exists():
+            self.update_button.configure(state=button_state)
+
+    def _open_update(self) -> None:
+        if self.update_status and self.update_status.update_available and self.update_status.release_url:
+            webbrowser.open(self.update_status.release_url)
+
+    def _show_update_popup(self, status: UpdateStatus) -> None:
+        popup = tk.Toplevel(self.root)
+        popup.title("Nova versão disponível")
+        self._set_icon_for(popup)
+        popup.transient(self.root)
+        popup.resizable(False, False)
+        content = ttk.Frame(popup, padding=22)
+        content.pack(fill="both", expand=True)
+        ttk.Label(content, text="Nova versão disponível", font=("Segoe UI", 14, "bold")).pack(anchor="w")
+        ttk.Label(
+            content,
+            text=f"A versão {status.latest_version} está disponível.\nVersão instalada: {PROJECT_VERSION}",
+            justify="left",
+        ).pack(anchor="w", pady=(10, 18))
+        actions = ttk.Frame(content)
+        actions.pack(anchor="e")
+        ttk.Button(actions, text="Atualizar", command=lambda: self._open_update_and_close(popup)).pack(side="left", padx=(0, 8))
         ttk.Button(actions, text="Fechar", command=popup.destroy).pack(side="left")
+        popup.grab_set()
+        popup.focus_force()
+
+    def _open_update_and_close(self, popup: tk.Toplevel) -> None:
+        self._open_update()
+        popup.destroy()
 
     def _start_update_check(self) -> None:
+        if self.update_check_in_progress:
+            return
+        self.update_check_in_progress = True
+        self._refresh_update_controls()
         Thread(target=self._check_updates_worker, daemon=True).start()
 
     def _check_updates_worker(self) -> None:
@@ -328,7 +394,9 @@ class ExtractorWindow:
         self.folder_path.set(self._folder_options.get(self.folder_combo.get(), ""))
 
     def _choose_output(self) -> None:
-        selected = filedialog.asksaveasfilename(defaultextension=".xlsx", filetypes=[("Excel", "*.xlsx")])
+        selected = filedialog.asksaveasfilename(
+            parent=self.root, defaultextension=".xlsx", filetypes=[("Excel", "*.xlsx")]
+        )
         if selected:
             self.output_path.set(selected)
 
@@ -339,7 +407,7 @@ class ExtractorWindow:
                 raise ValueError("Selecione uma pasta e preencha data, assunto e destino do Excel.")
             criteria = SearchCriteria(self.mailbox.get().strip(), self.folder_path.get().strip(), self._start_datetime(), self.subject.get().strip(), Path(output_text))
         except ValueError as exc:
-            messagebox.showerror("Dados inválidos", str(exc))
+            messagebox.showerror("Dados inválidos", str(exc), parent=self.root)
             return
         self.stop_event.clear()
         try:
@@ -348,6 +416,7 @@ class ExtractorWindow:
             messagebox.showerror(
                 "Destino indisponível",
                 f"Não foi possível criar o log na pasta escolhida.\n\n{type(exc).__name__}: {exc}",
+                parent=self.root,
             )
             return
         self.latest_output_path = None
@@ -399,8 +468,10 @@ class ExtractorWindow:
                     self.latest_output_path = Path(self.output_path.get().strip())
                     self.open_button.configure(state="normal")
                     self._write_log(f"Arquivo Excel gerado: {self.latest_output_path}")
-                    self._write_log(f"Execução concluída: {value} email(ns) exportado(s).")
-                    messagebox.showinfo("Extração concluída", f"{value} email(ns) exportado(s).")
+                    self._write_log(f"Execução concluída: {value} email(s) exportado(s).")
+                    messagebox.showinfo(
+                        "Extração concluída", f"{value} email(s) exportado(s).", parent=self.root
+                    )
                 elif event == "cancelled":
                     self._finish_ui()
                     self._write_log("Execução encerrada pelo usuário.")
@@ -410,15 +481,19 @@ class ExtractorWindow:
                     messagebox.showerror(
                         "Erro na extração",
                         f"A execução falhou. Consulte o log detalhado em:\n{self.log_file_path}",
+                        parent=self.root,
                     )
                 elif event == "update_status":
-                    if value.update_available:
-                        if messagebox.askyesno(
-                            "Atualização disponível",
-                            f"A versão {value.latest_version} está disponível. Deseja abrir a página de download?",
-                        ):
-                            webbrowser.open(value.release_url)
+                    self.update_check_in_progress = False
+                    self.update_status = value
+                    self._refresh_update_controls()
+                    if value.update_available and value.latest_version != self.update_notification_version:
+                        self.update_notification_version = value.latest_version
+                        self._show_update_popup(value)
                 elif event == "update_error":
+                    self.update_check_in_progress = False
+                    self.update_status = None
+                    self._refresh_update_controls()
                     self._write_log(f"Não foi possível verificar atualizações: {value}")
         except Empty:
             pass

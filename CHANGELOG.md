@@ -1,6 +1,23 @@
 # Histórico de versões
 
-Este projeto segue tags no formato `vMAJOR.MINOR.PATCH.REVISION`. Esta é a primeira versão de distribuição pública; não existem releases públicas anteriores.
+Este projeto segue tags no formato `vMAJOR.MINOR.PATCH.REVISION`. As versões publicadas permanecem disponíveis no histórico de releases do GitHub.
+
+## [0.0.1.1] — Em validação
+
+### Adicionado
+
+- Consulta automática da última release ao abrir a aplicação.
+- Janela própria, com o ícone do projeto, para notificar uma versão mais recente.
+- Ações “Atualizar” e “Fechar” na notificação de nova versão.
+- Exibição da última versão publicada na janela About.
+
+### Alterado
+
+- O botão do About agora é “Atualizar” e permanece desabilitado quando não existe versão superior.
+- O calendário e as janelas auxiliares passam a utilizar o ícone padrão do projeto.
+- A atualização abre diretamente a página oficial da release disponível.
+- As mensagens de quantidade foram padronizadas para `email(s)` e `exportado(s)`.
+- O README passa a registrar o roadmap das próximas funcionalidades.
 
 ## [0.0.1.0] — 2026-09-16
 
@@ -41,3 +58,4 @@ Este projeto segue tags no formato `vMAJOR.MINOR.PATCH.REVISION`. Esta é a prim
 - Documentação de instalação, uso, segurança, contribuição, estrutura e código de conduta.
 
 [0.0.1.0]: https://github.com/marcus300/petronect-email-extractor/releases/tag/v0.0.1.0
+[0.0.1.1]: https://github.com/marcus300/petronect-email-extractor/releases/tag/v0.0.1.1

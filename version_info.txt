@@ -1,7 +1,7 @@
 VSVersionInfo(
   ffi=FixedFileInfo(
-    filevers=(0, 0, 1, 0),
-    prodvers=(0, 0, 1, 0),
+    filevers=(0, 0, 1, 1),
+    prodvers=(0, 0, 1, 1),
     mask=0x3f,
     flags=0x0,
     OS=0x40004,
@@ -15,11 +15,11 @@ VSVersionInfo(
         '040904B0',
         [StringStruct('CompanyName', 'Emerson'),
          StringStruct('FileDescription', 'Petronect Email Extractor'),
-         StringStruct('FileVersion', '0.0.1.0'),
+         StringStruct('FileVersion', '0.0.1.1'),
          StringStruct('InternalName', 'PetronectEmailExtractor'),
-         StringStruct('OriginalFilename', 'Petronect Email Extractor v0.0.1.0.exe'),
+         StringStruct('OriginalFilename', 'Petronect Email Extractor v0.0.1.1.exe'),
          StringStruct('ProductName', 'Petronect Email Extractor'),
-         StringStruct('ProductVersion', '0.0.1.0')]
+         StringStruct('ProductVersion', '0.0.1.1')]
       )
     ]),
     VarFileInfo([VarStruct('Translation', [0x0409, 1200])])
