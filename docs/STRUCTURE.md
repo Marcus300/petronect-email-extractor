@@ -26,6 +26,7 @@ sala/
 │   ├── outlook.py              # Leitura recursiva do Outlook
 │   ├── paths.py                # Pastas do usuário e destino padrão do Excel
 │   ├── petronect.py            # Interpretação das notificações
+│   ├── purchase_order.py       # Parser de pedidos SAP Business Network / Ariba
 │   ├── ui.py                   # Interface gráfica
 │   ├── update_checker.py       # Consulta da release mais recente no GitHub
 │   └── updater.py              # Download, validação e substituição segura do executável

@@ -2,6 +2,32 @@
 
 Este projeto segue tags no formato `vMAJOR.MINOR.PATCH.REVISION`. As versões publicadas permanecem disponíveis no histórico de releases do GitHub.
 
+## [0.0.2.1] — 2026-09-17
+
+### Adicionado
+
+- Tela de carregamento inicial na própria janela, com identidade visual do projeto, anel circular em `Canvas`, progresso determinado por etapas e animação indeterminada durante a conexão com o Outlook.
+- Log de inicialização com tempos decorridos em `%LOCALAPPDATA%\PetronectEmailExtractor\logs`, incluindo conexão COM, quantidades de caixas e pastas, aplicação dos dados, erros e tempo até a interface pronta.
+- Testes automatizados do agendamento pós-renderização, worker COM, fila de dados simples, progresso monotônico, animação indeterminada, recuperação de falha e importação tardia do exportador Excel.
+- Parser dedicado para e-mails de Pedido de Compra do SAP Business Network / Ariba.
+- Extração do Pedido `45XXXXXXXX`, Contrato `46XXXXXXXX`, Cliente, Status dinâmico, Versão, Valor Total e Moeda.
+- Validação cruzada do número do pedido entre Subject e bloco `Pedido de compra`, mantendo o Subject como fonte principal e registrando divergências.
+- Fallbacks delimitados e auditáveis para Pedido, Contrato, Cliente, Valor Total e Moeda, sem capturar números ou valores genéricos do Body.
+- Layout Excel exclusivo de `Pedido` com dez colunas, autofiltro, cabeçalho congelado e formatação própria.
+- Testes com pedidos novos e alterados, USD e BRL, múltiplos valores, status dinâmico, clientes compostos, contratos repetidos ou divergentes e campos ausentes.
+
+### Alterado
+
+- A carga inicial de caixas e pastas do Outlook deixa de bloquear o construtor e passa a ocorrer em uma thread daemon iniciada por `after_idle`, com toda atualização Tkinter processada na thread principal por `Queue`.
+- Uma única fonte Outlook é reutilizada no worker inicial; COM é inicializado e finalizado dentro dessa mesma thread, sem transportar objetos COM para a interface.
+- A geração de Excel passa a ser importada somente quando uma extração é iniciada, reduzindo trabalho anterior à primeira renderização.
+- O calendário passa a manter uma única instância por janela principal; cliques repetidos restauram, trazem para frente e focalizam o popup existente, e o fechamento pelo botão ou pelo `X` limpa sua referência com segurança.
+- Os dias do calendário passam a usar uma paleta local de alto contraste, com estados visualmente distintos para data normal, hoje, data selecionada e hoje selecionado, sem modificar o tema global da aplicação.
+- Pedidos alterados com mais de um conjunto `Valor + Moeda` passam a utilizar o último par completo anterior a `Versão:`.
+- Pedido e Contrato são exportados como texto; Valor Total é exportado como decimal real com formatação monetária, sem depender do locale.
+- `Data e hora de recebimento`, `Assunto` e `ID` preservam respectivamente `ReceivedTime`, Subject e a origem já consolidada no pipeline.
+- Os layouts e parsers de `Sala`, `Prorrogada` e `Cancelada` permanecem isolados do novo fluxo de Pedido.
+
 ## [0.0.2.0] — 2026-09-17
 
 ### Adicionado
@@ -131,3 +157,4 @@ Este projeto segue tags no formato `vMAJOR.MINOR.PATCH.REVISION`. As versões pu
 [0.0.1.1]: https://github.com/marcus300/petronect-email-extractor/releases/tag/v0.0.1.1
 [0.0.1.2]: https://github.com/marcus300/petronect-email-extractor/releases/tag/v0.0.1.2
 [0.0.2.0]: https://github.com/marcus300/petronect-email-extractor/releases/tag/v0.0.2.0
+[0.0.2.1]: https://github.com/marcus300/petronect-email-extractor/releases/tag/v0.0.2.1

@@ -1,5 +1,6 @@
 import unittest
 from datetime import datetime
+import tkinter as tk
 from unittest.mock import Mock, patch
 
 from email_extractor.ui import ExtractorWindow
@@ -30,7 +31,121 @@ class ComboStub:
         self.current_index = index
 
 
+class PopupStub:
+    def __init__(self, exists=True) -> None:
+        self.exists = exists
+        self.deiconify = Mock()
+        self.lift = Mock()
+        self.focus_set = Mock()
+        self.grab_release = Mock()
+        self.destroy = Mock(side_effect=self._destroy)
+
+    def _destroy(self) -> None:
+        self.exists = False
+
+    def winfo_exists(self) -> bool:
+        return self.exists
+
+
 class UiTests(unittest.TestCase):
+    def test_calendar_real_window_is_single_instance_and_can_reopen(self) -> None:
+        try:
+            root = tk.Tk()
+        except tk.TclError as exc:
+            self.skipTest(f"Ambiente sem interface Tk: {exc}")
+        root.withdraw()
+        try:
+            window = object.__new__(ExtractorWindow)
+            window.root = root
+            window.calendar_popup = None
+            window.date_day = tk.StringVar(master=root, value="17")
+            window.date_month = tk.StringVar(master=root, value="09")
+            window.date_year = tk.StringVar(master=root, value="2026")
+
+            window._show_calendar()
+            first = window.calendar_popup
+            self.assertIsNotNone(first)
+            self.assertTrue(first.winfo_exists())
+            self.assertTrue(first.protocol("WM_DELETE_WINDOW"))
+
+            window._show_calendar()
+            self.assertIs(window.calendar_popup, first)
+
+            window._close_calendar()
+            root.update_idletasks()
+            self.assertIsNone(window.calendar_popup)
+
+            window._show_calendar()
+            self.assertIsNotNone(window.calendar_popup)
+            self.assertIsNot(window.calendar_popup, first)
+        finally:
+            window._close_calendar()
+            root.destroy()
+
+    def test_repeated_calendar_click_recovers_the_single_existing_popup(self) -> None:
+        window = object.__new__(ExtractorWindow)
+        popup = PopupStub()
+        window.calendar_popup = popup
+
+        for _ in range(5):
+            self.assertTrue(window._recover_calendar_popup())
+
+        self.assertIs(window.calendar_popup, popup)
+        self.assertEqual(popup.deiconify.call_count, 5)
+        self.assertEqual(popup.lift.call_count, 5)
+        self.assertEqual(popup.focus_set.call_count, 5)
+
+    def test_absent_or_destroyed_calendar_can_be_created_again(self) -> None:
+        window = object.__new__(ExtractorWindow)
+        window.calendar_popup = None
+        self.assertFalse(window._recover_calendar_popup())
+        window.calendar_popup = PopupStub(exists=False)
+        self.assertFalse(window._recover_calendar_popup())
+        self.assertIsNone(window.calendar_popup)
+
+    def test_close_calendar_releases_and_destroys_popup_and_clears_reference(self) -> None:
+        window = object.__new__(ExtractorWindow)
+        popup = PopupStub()
+        window.calendar_popup = popup
+
+        window._close_calendar()
+
+        self.assertIsNone(window.calendar_popup)
+        popup.grab_release.assert_called_once()
+        popup.destroy.assert_called_once()
+
+    def test_unexpected_popup_destruction_clears_reference(self) -> None:
+        window = object.__new__(ExtractorWindow)
+        popup = PopupStub()
+        window.calendar_popup = popup
+        event = Mock(widget=popup)
+
+        window._on_calendar_destroy(event)
+
+        self.assertIsNone(window.calendar_popup)
+
+    def test_closing_main_window_closes_calendar_without_orphan(self) -> None:
+        window = object.__new__(ExtractorWindow)
+        popup = PopupStub()
+        window.calendar_popup = popup
+        window._close_about = Mock()
+        window.root = Mock()
+
+        window._close_application()
+
+        self.assertIsNone(window.calendar_popup)
+        popup.destroy.assert_called_once()
+        window.root.destroy.assert_called_once()
+
+    def test_calendar_day_style_is_local_and_keeps_global_ttk_theme_untouched(self) -> None:
+        button = Mock()
+        ExtractorWindow._style_calendar_day(button, "today_selected")
+        configured = button.configure.call_args.kwargs
+        self.assertEqual(configured["background"], "#0550AE")
+        self.assertEqual(configured["foreground"], "#FFFFFF")
+        self.assertEqual(configured["highlightbackground"], "#54AEFF")
+        self.assertEqual(configured["highlightthickness"], 2)
+
     def test_date_and_time_segments_accept_partial_numeric_input(self) -> None:
         self.assertTrue(ExtractorWindow._validate_segment("", "2"))
         self.assertTrue(ExtractorWindow._validate_segment("2", "2"))
@@ -53,7 +168,7 @@ class UiTests(unittest.TestCase):
         self.assertFalse(uses_room_layout(""))
         self.assertFalse(uses_room_layout("[EXTERNAL] SALA"))
 
-    @patch("email_extractor.ui.OutlookEmailSource")
+    @patch("email_extractor.outlook.OutlookEmailSource")
     def test_folder_dropdown_refreshes_subfolders_and_preserves_selection(self, source_type) -> None:
         window = object.__new__(ExtractorWindow)
         window.mailbox = TextVariable("petronect, notificacoes")

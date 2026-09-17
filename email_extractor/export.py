@@ -6,7 +6,7 @@ import tempfile
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font
 
-from .models import EmailRecord, uses_structured_layout
+from .models import EmailRecord, uses_purchase_order_layout, uses_structured_layout
 
 
 def export_xlsx(
@@ -20,22 +20,47 @@ def export_xlsx(
     workbook = Workbook()
     sheet = workbook.active
     sheet.title = "Emails"
+    purchase_order_layout = uses_purchase_order_layout(subject_filter)
     structured_layout = uses_structured_layout(subject_filter)
-    headers = (
-        ["Data e hora de recebimento", "Assunto", "ID", "Tipo", "Mensagem"]
-        if structured_layout
-        else ["Data e hora de recebimento", "Assunto", "ID", "Body"]
-    )
+    if purchase_order_layout:
+        headers = [
+            "Data e hora de recebimento",
+            "Assunto",
+            "Pedido",
+            "Contrato",
+            "ID",
+            "Cliente",
+            "Status",
+            "Versão",
+            "Valor Total",
+            "Moeda",
+        ]
+    elif structured_layout:
+        headers = ["Data e hora de recebimento", "Assunto", "ID", "Tipo", "Mensagem"]
+    else:
+        headers = ["Data e hora de recebimento", "Assunto", "ID", "Body"]
     sheet.append(headers)
     for cell in sheet[1]:
         cell.font = Font(bold=True)
     count = 0
     for record in records:
-        row = (
-            [record.received_at, record.subject, record.email_id, record.tipo, record.mensagem]
-            if structured_layout
-            else [record.received_at, record.subject, record.email_id, record.body]
-        )
+        if purchase_order_layout:
+            row = [
+                record.received_at,
+                record.subject,
+                record.pedido,
+                record.contrato,
+                record.email_id,
+                record.cliente,
+                record.status,
+                record.versao,
+                record.valor_total,
+                record.moeda,
+            ]
+        elif structured_layout:
+            row = [record.received_at, record.subject, record.email_id, record.tipo, record.mensagem]
+        else:
+            row = [record.received_at, record.subject, record.email_id, record.body]
         sheet.append(row)
         count += 1
         if on_progress and count % 25 == 0:
@@ -44,15 +69,33 @@ def export_xlsx(
     sheet.auto_filter.ref = sheet.dimensions
     sheet.column_dimensions["A"].width = 25
     sheet.column_dimensions["B"].width = 45
-    sheet.column_dimensions["C"].width = 14
-    sheet.column_dimensions["D"].width = 45 if structured_layout else 100
-    if structured_layout:
-        sheet.column_dimensions["E"].width = 90
+    if purchase_order_layout:
+        purchase_widths = {
+            "C": 16, "D": 16, "E": 14, "F": 28, "G": 24,
+            "H": 10, "I": 18, "J": 10,
+        }
+        for column, width in purchase_widths.items():
+            sheet.column_dimensions[column].width = width
+        for column in ("C", "D"):
+            for cell in sheet[column][1:]:
+                cell.number_format = "@"
+        for cell in sheet["I"][1:]:
+            cell.number_format = "#,##0.00"
+    else:
+        sheet.column_dimensions["C"].width = 14
+        sheet.column_dimensions["D"].width = 45 if structured_layout else 100
+        if structured_layout:
+            sheet.column_dimensions["E"].width = 90
     for cell in sheet["A"][1:]:
         cell.number_format = "dd/mm/yyyy hh:mm:ss"
-    content_column = "E" if structured_layout else "D"
-    for cell in sheet[content_column][1:]:
-        cell.alignment = Alignment(wrap_text=True, vertical="top")
+    if purchase_order_layout:
+        for column in ("B", "F", "G"):
+            for cell in sheet[column][1:]:
+                cell.alignment = Alignment(wrap_text=True, vertical="top")
+    else:
+        content_column = "E" if structured_layout else "D"
+        for cell in sheet[content_column][1:]:
+            cell.alignment = Alignment(wrap_text=True, vertical="top")
     # Save beside the destination and replace only after a complete workbook is
     # produced. This avoids leaving a corrupt final file after an interrupted save.
     temporary_name = None

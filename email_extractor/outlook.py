@@ -15,6 +15,7 @@ try:
         subject_matches,
         subject_terms,
         structured_subject_category,
+        uses_purchase_order_layout,
     )
     from .petronect import (
         extrair_tipo_mensagem,
@@ -23,6 +24,7 @@ try:
         normalize_body,
     )
     from .localization import alphabetical_key
+    from .purchase_order import extrair_pedido_compra
 except ImportError:
     # Support direct diagnostics such as `python email_extractor/outlook.py`.
     from cleaning import find_email_id
@@ -34,6 +36,7 @@ except ImportError:
         subject_matches,
         subject_terms,
         structured_subject_category,
+        uses_purchase_order_layout,
     )
     from petronect import (
         extrair_tipo_mensagem,
@@ -42,6 +45,7 @@ except ImportError:
         normalize_body,
     )
     from localization import alphabetical_key
+    from purchase_order import extrair_pedido_compra
 
 
 class OutlookUnavailableError(RuntimeError):
@@ -179,6 +183,32 @@ class OutlookEmailSource:
             subject_items += 1
             subject = str(getattr(message, "Subject", ""))
             body = str(getattr(message, "Body", ""))
+            normalized_body = normalize_body(body)
+            email_id = find_email_id(normalized_body)
+            if uses_purchase_order_layout(criteria.subject):
+                purchase_order = extrair_pedido_compra(subject, body)
+                if on_progress:
+                    for warning in purchase_order.warnings:
+                        on_progress(f"Aviso no tratamento Pedido: {warning}")
+                if not purchase_order.valid:
+                    continue
+                yield EmailRecord(
+                    received_at,
+                    email_id,
+                    subject,
+                    "",
+                    "",
+                    body,
+                    folder.FolderPath,
+                    pedido=purchase_order.pedido,
+                    contrato=purchase_order.contrato,
+                    cliente=purchase_order.cliente,
+                    status=purchase_order.status,
+                    versao=purchase_order.versao,
+                    valor_total=purchase_order.valor_total,
+                    moeda=purchase_order.moeda,
+                )
+                continue
             structured_category = structured_subject_category(subject, criteria.subject)
             if structured_category == "sala":
                 parsed = extrair_tipo_mensagem(body)
@@ -202,7 +232,7 @@ class OutlookEmailSource:
                 tipo, mensagem = "", ""
             yield EmailRecord(
                 received_at,
-                find_email_id(normalize_body(body)),
+                email_id,
                 subject,
                 tipo,
                 mensagem,

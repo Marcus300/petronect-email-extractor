@@ -7,6 +7,8 @@ import platform
 import sys
 import tempfile
 import traceback
+from threading import Lock
+from time import perf_counter
 from pathlib import Path
 
 
@@ -67,3 +69,21 @@ def write_update_check_log(exc: BaseException) -> Path:
     ]
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return path
+
+
+class StartupLogger:
+    """Thread-safe elapsed-time log for application startup diagnostics."""
+
+    def __init__(self, started_at: float | None = None) -> None:
+        self.started_at = started_at if started_at is not None else perf_counter()
+        self._lock = Lock()
+        base = os.getenv("LOCALAPPDATA") or tempfile.gettempdir()
+        directory = Path(base) / "PetronectEmailExtractor" / "logs"
+        directory.mkdir(parents=True, exist_ok=True)
+        self.path = directory / f"initialization_{datetime.now():%Y%m%d_%H%M%S_%f}.log"
+
+    def write(self, message: str) -> None:
+        elapsed = perf_counter() - self.started_at
+        with self._lock:
+            with self.path.open("a", encoding="utf-8") as stream:
+                stream.write(f"[{elapsed:.3f}s] {message}\n")

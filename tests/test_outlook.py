@@ -1,8 +1,11 @@
 import unittest
 from datetime import datetime
+from decimal import Decimal
+from pathlib import Path
 from unittest.mock import patch
 
 from email_extractor.outlook import OutlookEmailSource
+from email_extractor.models import SearchCriteria
 
 
 class MissingReceivedTime:
@@ -112,3 +115,58 @@ class OutlookTests(unittest.TestCase):
             OutlookEmailSource._sender_email(message),
             "petronect@petronect.com.br",
         )
+
+    def test_purchase_order_pipeline_uses_outlook_received_time_and_original_subject(self) -> None:
+        body = (
+            "De:\nCliente\nRECAP\nPedido de compra\n(Novo)\n4515588132\n"
+            "Valor:\n$\n2.160,67\nUSD\nVersão: 1\n"
+            "Número do contrato\n4600676634"
+        )
+        message = type(
+            "Message",
+            (),
+            {
+                "MessageClass": "IPM.Note",
+                "ReceivedTime": datetime(2026, 9, 17, 11, 30),
+                "SenderEmailAddress": "ordersender-prod@ansmtp.ariba.com",
+                "Subject": "[EXTERNAL] Novo PEDIDO 4515588132",
+                "Body": body,
+            },
+        )()
+
+        class Items:
+            Count = 1
+
+            @staticmethod
+            def Item(_index):
+                return message
+
+            @staticmethod
+            def Sort(_field, _descending):
+                return None
+
+        folder = type(
+            "Folder",
+            (),
+            {
+                "FolderPath": r"\\Caixa\Inbox",
+                "Items": Items(),
+                "Folders": type("Folders", (), {"Count": 0})(),
+            },
+        )()
+        criteria = SearchCriteria(
+            "Caixa",
+            r"\\Caixa\Inbox",
+            datetime(2026, 9, 17, 10, 0),
+            "Pedido",
+            Path("pedidos.xlsx"),
+        )
+        source = object.__new__(OutlookEmailSource)
+        records = list(source._walk_folder(folder, criteria, None, None, None))
+
+        self.assertEqual(len(records), 1)
+        self.assertEqual(records[0].received_at, datetime(2026, 9, 17, 11, 30))
+        self.assertEqual(records[0].subject, "[EXTERNAL] Novo PEDIDO 4515588132")
+        self.assertEqual(records[0].pedido, "4515588132")
+        self.assertEqual(records[0].valor_total, Decimal("2160.67"))
+        self.assertEqual(records[0].email_id, "")

@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from datetime import datetime
+from decimal import Decimal
 from pathlib import Path
 
 from .localization import unique_sorted
@@ -20,6 +21,7 @@ ROOM_SUBJECT = "Sala"
 EXTENDED_OPPORTUNITY_SUBJECT = "Prorrogada"
 CANCELLED_OPPORTUNITY_SUBJECT = "Cancelada"
 COMBINED_SUBJECT = "0.Conjunto (Sala, Prorrogação, Cancelamento)"
+PURCHASE_ORDER_SUBJECT = "Pedido"
 ALLOWED_SENDERS = frozenset(
     {
         "ordersender-prod@ansmtp.ariba.com",
@@ -67,6 +69,11 @@ def uses_cancelled_opportunity_layout(subject_filter: str) -> bool:
 def uses_combined_layout(subject_filter: str) -> bool:
     """Identify the combined Sala/Prorrogada/Cancelada option."""
     return subject_filter.strip().casefold() == COMBINED_SUBJECT.casefold()
+
+
+def uses_purchase_order_layout(subject_filter: str) -> bool:
+    """Return whether the dedicated SAP Ariba purchase-order layout is required."""
+    return subject_filter.strip().casefold() == PURCHASE_ORDER_SUBJECT.casefold()
 
 
 def structured_subject_category(subject: str, subject_filter: str) -> str:
@@ -118,3 +125,10 @@ class EmailRecord:
     mensagem: str
     body: str
     folder: str
+    pedido: str = ""
+    contrato: str = ""
+    cliente: str = ""
+    status: str = ""
+    versao: str = ""
+    valor_total: Decimal | None = None
+    moeda: str = ""

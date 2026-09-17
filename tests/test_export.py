@@ -1,6 +1,7 @@
 import tempfile
 import unittest
 from datetime import datetime
+from decimal import Decimal
 from pathlib import Path
 
 from openpyxl import load_workbook
@@ -193,6 +194,73 @@ class ExportTests(unittest.TestCase):
                 )
             finally:
                 workbook.close()
+
+    def test_purchase_order_uses_dedicated_ten_column_layout_and_numeric_value(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "pedidos.xlsx"
+            record = EmailRecord(
+                datetime(2026, 9, 17, 11, 30),
+                "7001234567",
+                "Novo PEDIDO 4515588132",
+                "",
+                "",
+                "Body original",
+                "Inbox",
+                pedido="4515588132",
+                contrato="4600676634",
+                cliente="RECAP",
+                status="Novo",
+                versao="1",
+                valor_total=Decimal("1238748.44"),
+                moeda="BRL",
+            )
+            self.assertEqual(export_xlsx([record], output, subject_filter="Pedido"), 1)
+            workbook = load_workbook(output, data_only=True)
+            try:
+                sheet = workbook.active
+                self.assertEqual(
+                    tuple(cell.value for cell in sheet[1]),
+                    (
+                        "Data e hora de recebimento",
+                        "Assunto",
+                        "Pedido",
+                        "Contrato",
+                        "ID",
+                        "Cliente",
+                        "Status",
+                        "Versão",
+                        "Valor Total",
+                        "Moeda",
+                    ),
+                )
+                self.assertEqual(sheet.max_column, 10)
+                self.assertEqual(sheet.freeze_panes, "A2")
+                self.assertEqual(sheet.auto_filter.ref, "A1:J2")
+                self.assertEqual(sheet["C2"].value, "4515588132")
+                self.assertEqual(sheet["D2"].value, "4600676634")
+                self.assertEqual(sheet["C2"].number_format, "@")
+                self.assertEqual(sheet["D2"].number_format, "@")
+                self.assertAlmostEqual(sheet["I2"].value, 1238748.44, places=2)
+                self.assertEqual(sheet["I2"].number_format, "#,##0.00")
+            finally:
+                workbook.close()
+
+    def test_purchase_order_layout_does_not_change_existing_layouts(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            record = EmailRecord(
+                datetime(2026, 9, 17, 13, 0), "7001234567", "SALA", "Circular", "Mensagem", "", "Inbox"
+            )
+            for subject_filter in ("Sala", "Prorrogada", "Cancelada"):
+                output = Path(directory) / f"{subject_filter}.xlsx"
+                export_xlsx([record], output, subject_filter=subject_filter)
+                workbook = load_workbook(output, read_only=True)
+                try:
+                    self.assertEqual(
+                        tuple(cell.value for cell in workbook.active[1]),
+                        ("Data e hora de recebimento", "Assunto", "ID", "Tipo", "Mensagem"),
+                    )
+                finally:
+                    workbook.close()
 
 
 if __name__ == "__main__":

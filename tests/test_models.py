@@ -7,6 +7,7 @@ from email_extractor.models import (
     subject_matches,
     subject_terms,
     uses_structured_layout,
+    uses_purchase_order_layout,
 )
 
 
@@ -39,6 +40,12 @@ class FilterModelTests(unittest.TestCase):
         self.assertTrue(subject_matches("Criação de Oportunidade 7001234567", "Nova Oportunidade"))
         self.assertTrue(subject_matches("Oportunidade Publicada", "Nova Oportunidade"))
         self.assertFalse(subject_matches("Oportunidade Cancelada", "Nova Oportunidade"))
+
+    def test_purchase_order_filter_and_layout_are_dedicated(self) -> None:
+        self.assertTrue(subject_matches("Novo PEDIDO 4515588132", "Pedido"))
+        self.assertTrue(subject_matches("Purchase ORDER 4515588132", "Pedido"))
+        self.assertTrue(uses_purchase_order_layout("Pedido"))
+        self.assertFalse(uses_structured_layout("Pedido"))
 
     def test_prorrogada_matches_any_subject_containing_the_category_word(self) -> None:
         self.assertTrue(subject_matches("Prorrogada", "Prorrogada"))

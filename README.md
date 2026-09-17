@@ -11,8 +11,8 @@
 <div align="center">
   <br>
   <img src="https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white" alt="Python 3.10+">
-  <img src="https://img.shields.io/badge/versão-0.0.2.0-blue" alt="Versão 0.0.2.0">
-  <img src="https://img.shields.io/badge/status-estável-brightgreen" alt="Status estável">
+  <img src="https://img.shields.io/badge/versão-0.0.2.1-blue" alt="Versão 0.0.2.1">
+  <img src="https://img.shields.io/badge/status-em%20validação-orange" alt="Status em validação">
   <img src="https://img.shields.io/badge/licença-MIT-yellow" alt="Licença MIT">
   <a href="https://github.com/marcus300/petronect-email-extractor/releases/latest"><img src="https://img.shields.io/badge/release-latest-2ea44f" alt="Última release"></a>
 </div>
@@ -114,14 +114,14 @@ Quando uma versão numericamente superior estiver disponível, o botão **Atuali
 
 <h3 id="conexão-microsoft-graph">Conexão Microsoft Graph</h3>
 
-A versão 0.0.2.0 ainda consulta mensagens pelo Outlook clássico via COM. O novo Outlook não disponibiliza essa automação para aplicativos externos. Está planejada uma segunda fonte baseada no Microsoft Graph, que consultará a caixa diretamente no Exchange Online e não dependerá de qual Outlook está aberto nem do cache local.
+A versão 0.0.2.1 ainda consulta mensagens pelo Outlook clássico via COM. O novo Outlook não disponibiliza essa automação para aplicativos externos. Está planejada uma segunda fonte baseada no Microsoft Graph, que consultará a caixa diretamente no Exchange Online e não dependerá de qual Outlook está aberto nem do cache local.
 
 <h2 id="como-usar">Como usar</h2>
 
 Uso recomendado do executável:
 
 1. Abra o **Outlook (clássico)** e aguarde a sincronização da caixa compartilhada. Os e-mails exibidos apenas no novo Outlook ainda não podem ser lidos pela versão atual.
-2. Abra `Petronect Email Extractor v0.0.2.0.exe` fora de qualquer arquivo compactado.
+2. Abra `Petronect Email Extractor v0.0.2.1.exe` fora de qualquer arquivo compactado.
 3. Selecione a caixa de pesquisa e a pasta do Outlook.
 4. Informe a data e a hora inicial digitando os campos ou utilizando o calendário. O corte não pode ser posterior à data e hora atuais.
 5. No assunto, selecione uma opção da lista, digite um texto livre ou deixe o campo vazio.
@@ -148,10 +148,13 @@ Ao abrir a aplicação, o campo **Salvar Excel em** é preenchido automaticament
 
 <h2 id="funcionalidades">Funcionalidades</h2>
 
+- Exibe uma tela de carregamento responsiva na própria janela durante a conexão inicial com o Outlook, com logo, anel circular animado, progresso real por etapas e mensagens em PT-BR.
+- Carrega caixas e pastas iniciais fora da thread gráfica, mantendo a janela desenhada e responsiva; falhas são registradas em `%LOCALAPPDATA%\PetronectEmailExtractor\logs` e liberam a interface em estado estável.
 - Seleciona caixas, pastas e subpastas do Outlook.
 - Atualiza automaticamente a árvore de pastas ao abrir a lista, incluindo subpastas sincronizadas depois da inicialização e preservando a pasta selecionada.
 - Permite digitar ou selecionar no calendário a data inicial.
-- Exibe calendário integralmente em PT-BR, com semana iniciando em domingo, cabeçalho dinâmico, botão **Hoje** e destaques diferentes para a data atual e a data selecionada.
+- Exibe calendário integralmente em PT-BR, com semana iniciando em domingo, cabeçalho dinâmico, botão **Hoje** e destaques profissionais distintos para data atual, data selecionada e combinação dos dois estados.
+- Mantém uma única instância do calendário: cliques repetidos recuperam, trazem para frente e focalizam a janela já aberta; após fechá-la pelo botão ou pelo `X`, ela pode ser aberta novamente.
 - Permite deixar o assunto vazio, digitar um trecho livre ou selecionar um tipo de notificação na lista suspensa editável.
 - Apresenta caixas de correio, subpastas irmãs e tipos de assunto em ordem alfabética sem diferenciar maiúsculas ou acentos; a hierarquia de pastas permanece preservada.
 - Converte cada opção visível em um ou mais termos internos e aceita a correspondência de qualquer termo configurado.
@@ -166,6 +169,11 @@ Ao abrir a aplicação, o campo **Salvar Excel em** é preenchido automaticament
 - `Sala`, `Prorrogada` e `Cancelada` compartilham o mesmo layout estruturado de Excel com as colunas `Tipo` e `Mensagem`.
 - Permite pesquisar `Sala`, `Prorrogada` e `Cancelada` conjuntamente em uma única varredura, mantendo as regras individuais de limpeza e extração de cada categoria.
 - Para assunto diferente de `Sala`, `Prorrogada` e `Cancelada`, ou vazio, exporta data, assunto, ID e o `Body` original sem tratamento.
+- Para `Pedido`, valida o bloco `Pedido de compra` do SAP Business Network/Ariba e utiliza um layout próprio com dez colunas.
+- Extrai o Pedido `45XXXXXXXX` prioritariamente do Subject, com validação/fallback limitado ao bloco principal do pedido.
+- Extrai Contrato `46XXXXXXXX` prioritariamente do campo formal `Número do contrato`, Cliente de `De: → Cliente`, Status dinâmico, Versão, Valor Total e Moeda.
+- Em pedidos alterados com vários conjuntos de valor e moeda, utiliza deterministicamente o último par completo anterior a `Versão:`.
+- Armazena `Valor Total` como número decimal real no Excel; Pedido e Contrato permanecem como texto para preservar todos os dígitos.
 - Impede o início da pesquisa quando a data e hora de corte forem posteriores ao momento atual.
 - Sugere automaticamente `Downloads\emails_petronect.xlsx` como destino inicial, sem impedir a escolha de outro local ou nome.
 - Verifica automaticamente a última versão publicada e oferece atualização quando necessário.
@@ -190,7 +198,7 @@ As amostras não registram remetente, destinatários, texto do assunto nem conte
 
 <h2 id="última-release">Última release</h2>
 
-A versão atual é **0.0.2.0**. A página abaixo contém o executável para Windows, as notas da versão e os arquivos-fonte correspondentes à tag publicada.
+A versão **0.0.2.1** é a release pública atual. A página abaixo contém o executável, as notas da versão e os arquivos-fonte; versões anteriores continuam disponíveis no histórico de releases.
 
 <p align="center">
   <a href="https://github.com/Marcus300/petronect-email-extractor/releases/latest"><strong>Acessar a página de download da última release »</strong></a>
@@ -207,12 +215,13 @@ As versões anteriores continuam disponíveis no [histórico completo de release
 - [x] Tratar notificações `Prorrogada` com extração determinística da nova data final e layout estruturado.
 - [x] Tratar notificações `Cancelada` preservando o motivo e reutilizando o layout estruturado.
 - [x] Reunir `Sala`, `Prorrogada` e `Cancelada` em um filtro conjunto executado em uma única varredura.
+- [x] Criar parser e layout Excel exclusivo para pedidos SAP Business Network / Ariba.
 -  Criar layouts tratados específicos para:
     - [x] Sala
     - [x] Prorrogada
     - [x] Cancelada
     - [x]  Conjunto
-    - [ ] Pedido
+    - [x] Pedido
     - [ ] Chamado
     - [ ] Nova Oportunidade
     - [ ] Relatório
@@ -227,8 +236,8 @@ As versões anteriores continuam disponíveis no [histórico completo de release
 Para publicar uma versão, atualize `email_extractor/version.py` e `version_info.txt`, execute os testes e envie uma tag correspondente:
 
 ```powershell
-git tag -a v0.0.2.0 -m "Petronect Email Extractor v0.0.2.0"
-git push origin v0.0.2.0
+git tag -a v0.0.2.1 -m "Petronect Email Extractor v0.0.2.1"
+git push origin v0.0.2.1
 ```
 
 O workflow testa o projeto no Windows, valida a correspondência entre tag e metadados, gera o `.exe` e o anexa à release. Nunca substitua uma tag publicada: cada nova versão deve receber uma nova tag, preservando downloads e notas anteriores.

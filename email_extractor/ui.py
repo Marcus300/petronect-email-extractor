@@ -9,17 +9,16 @@ from tkinter import filedialog, messagebox, ttk
 from tkinter.scrolledtext import ScrolledText
 import webbrowser
 
-from .diagnostics import format_exception, runtime_metadata, write_update_check_log
+from .diagnostics import StartupLogger, format_exception, runtime_metadata, write_update_check_log
 from .calendar_model import (
+    CALENDAR_DAY_PALETTE,
     WEEKDAY_NAMES_SUNDAY_FIRST,
     day_state,
     month_title,
     month_weeks,
     shift_month,
 )
-from .export import export_xlsx
 from .models import SUBJECT_OPTIONS, SearchCriteria
-from .outlook import OutlookEmailSource, OutlookUnavailableError
 from .paths import default_excel_path
 from .update_checker import UpdateStatus, check_for_updates
 from .updater import DownloadedUpdate, download_update, schedule_executable_replacement
@@ -32,7 +31,7 @@ PROJECT_GITHUB_URL = "https://github.com/marcus300"
 
 
 class ExtractorWindow:
-    def __init__(self, root: tk.Tk) -> None:
+    def __init__(self, root: tk.Tk, process_started_at: float | None = None) -> None:
         self.root = root
         self.root.title(f"Petronect Email Extractor - v{PROJECT_VERSION}")
         self._set_window_icon()
@@ -58,13 +57,31 @@ class ExtractorWindow:
         self.update_download_in_progress = False
         self.update_notification_version = ""
         self.about_popup: tk.Toplevel | None = None
+        self.calendar_popup: tk.Toplevel | None = None
         self.latest_version_label: ttk.Label | None = None
         self.update_button: ttk.Button | None = None
+        self.startup_logger = StartupLogger(process_started_at)
+        self.startup_queue: Queue[tuple[str, object]] = Queue()
+        self.startup_stop_event = Event()
+        self.startup_worker: Thread | None = None
+        self.startup_progress = 0
+        self.startup_indeterminate = False
+        self.startup_angle = 90
+        self.startup_animation_id = None
+        self.startup_start_id = None
+        self.startup_poll_id = None
+        self.startup_slow_id = None
+        self.closing = False
         self._folder_options: dict[str, str] = {}
+        self.startup_logger.write("Processo Python iniciado")
+        self.startup_logger.write("Janela criada")
         self._build()
-        self._load_mailboxes()
-        self.root.after(100, self._process_progress)
-        self.root.after(1500, self._start_update_check)
+        self.main_frame.pack_forget()
+        self._build_loading_screen()
+        self.root.protocol("WM_DELETE_WINDOW", self._close_application)
+        self.startup_logger.write("Tela de carregamento criada")
+        self.startup_start_id = self.root.after(50, self._start_initialization)
+        self.startup_poll_id = self.root.after(80, self._process_progress)
 
     def _set_window_icon(self) -> None:
         icon_path = self._resource_path("logo.ico")
@@ -79,6 +96,7 @@ class ExtractorWindow:
 
     def _build(self) -> None:
         frame = ttk.Frame(self.root, padding=16)
+        self.main_frame = frame
         frame.pack(fill="both", expand=True)
         frame.columnconfigure(1, weight=1)
         frame.rowconfigure(1, weight=1)
@@ -147,6 +165,218 @@ class ExtractorWindow:
             column=1,
         )
 
+    def _build_loading_screen(self) -> None:
+        self.loading_frame = tk.Frame(self.root, background="#F6F8FA")
+        self.loading_frame.place(x=0, y=0, relwidth=1, relheight=1)
+        card = tk.Frame(
+            self.loading_frame,
+            background="#FFFFFF",
+            highlightbackground="#D0D7DE",
+            highlightthickness=1,
+            padx=42,
+            pady=28,
+        )
+        card.place(relx=0.5, rely=0.5, anchor="center")
+        logo_path = self._resource_path("logo.png")
+        if logo_path.exists():
+            image = tk.PhotoImage(file=str(logo_path))
+            scale = max(1, (max(image.width(), image.height()) + 71) // 72)
+            if scale > 1:
+                image = image.subsample(scale, scale)
+            self.loading_logo = image
+            tk.Label(card, image=image, background="#FFFFFF").pack(pady=(0, 8))
+        tk.Label(
+            card,
+            text="Petronect Email Extractor",
+            background="#FFFFFF",
+            foreground="#24292F",
+            font=("Segoe UI", 16, "bold"),
+        ).pack()
+        tk.Label(
+            card,
+            text=f"Versão {PROJECT_VERSION}",
+            background="#FFFFFF",
+            foreground="#57606A",
+            font=("Segoe UI", 9),
+        ).pack(pady=(2, 14))
+        self.loading_canvas = tk.Canvas(
+            card, width=160, height=160, background="#FFFFFF", highlightthickness=0
+        )
+        self.loading_canvas.pack()
+        self.loading_canvas.create_oval(15, 15, 145, 145, outline="#D0D7DE", width=12)
+        self.loading_arc = self.loading_canvas.create_arc(
+            15, 15, 145, 145, start=90, extent=0, style="arc", outline="#168A4A", width=12
+        )
+        self.loading_percent = self.loading_canvas.create_text(
+            80, 80, text="0%", fill="#24292F", font=("Segoe UI", 18, "bold")
+        )
+        self.loading_status = tk.Label(
+            card,
+            text="Iniciando aplicação...",
+            background="#FFFFFF",
+            foreground="#24292F",
+            font=("Segoe UI", 10, "bold"),
+        )
+        self.loading_status.pack(pady=(12, 3))
+        self.loading_detail = tk.Label(
+            card,
+            text="Preparando os recursos necessários.",
+            background="#FFFFFF",
+            foreground="#57606A",
+            font=("Segoe UI", 9),
+        )
+        self.loading_detail.pack()
+        self.loading_frame.lift()
+
+    def _start_initialization(self) -> None:
+        self.startup_start_id = None
+        if self.closing or self.startup_worker is not None:
+            return
+        self.startup_logger.write("Tela de carregamento renderizada")
+        self.startup_logger.write("Worker iniciado")
+        self.startup_worker = Thread(target=self._initialization_worker, daemon=True)
+        self.startup_worker.start()
+        self.startup_slow_id = self.root.after(8000, self._show_slow_startup_message)
+
+    def _initialization_worker(self) -> None:
+        com_initialized = False
+        try:
+            import pythoncom
+            from .outlook import OutlookEmailSource
+
+            pythoncom.CoInitialize()
+            com_initialized = True
+            self._startup_event("progress", (10, "Preparando recursos..."))
+            self._startup_event("progress", (20, "Preparando integração com o Outlook..."))
+            self._startup_event("indeterminate", "Conectando ao Outlook...")
+            self.startup_logger.write("Início da conexão com Outlook")
+            source = OutlookEmailSource()
+            self.startup_logger.write("Conexão com Outlook concluída")
+            self._startup_event("progress", (40, "Outlook conectado"))
+            mailboxes = source.list_mailboxes()
+            self.startup_logger.write(f"Caixas carregadas: {len(mailboxes)}")
+            self._startup_event("progress", (65, "Caixas de e-mail carregadas"))
+            folders = []
+            if mailboxes and not self.startup_stop_event.is_set():
+                self.startup_logger.write("Início da enumeração de pastas")
+                try:
+                    folders = source.list_inbox_folders(mailboxes[0], max_depth=2)
+                except Exception as exc:
+                    details = format_exception(exc)
+                    self.startup_logger.write(f"Aviso ao carregar pastas iniciais: {details}")
+                    self._startup_event("startup_warning", details)
+            self.startup_logger.write(f"Pastas carregadas: {len(folders)}")
+            if not self.startup_stop_event.is_set():
+                self._startup_event("progress", (95, "Preparando a interface..."))
+                self._startup_event("result", (list(mailboxes), list(folders)))
+        except Exception as exc:
+            details = format_exception(exc)
+            self.startup_logger.write(f"Erro na inicialização: {details}")
+            self._startup_event("startup_error", details)
+        finally:
+            if com_initialized:
+                pythoncom.CoUninitialize()
+                self.startup_logger.write("COM finalizado no worker")
+
+    def _startup_event(self, event: str, value: object) -> None:
+        if not self.startup_stop_event.is_set():
+            self.startup_queue.put((event, value))
+
+    def _show_slow_startup_message(self) -> None:
+        self.startup_slow_id = None
+        if not self.closing and self.startup_indeterminate:
+            self.loading_status.configure(text="O Outlook está demorando mais que o normal para responder...")
+
+    def _set_startup_progress(self, value: int, status: str) -> None:
+        value = max(0, min(100, int(value)))
+        self.startup_progress = max(self.startup_progress, value)
+        self.startup_indeterminate = False
+        self.loading_canvas.itemconfigure(self.loading_arc, start=90, extent=-3.6 * self.startup_progress)
+        self.loading_canvas.itemconfigure(self.loading_percent, text=f"{self.startup_progress}%")
+        self.loading_status.configure(text=status)
+
+    def _set_startup_indeterminate(self, status: str) -> None:
+        self.startup_indeterminate = True
+        self.loading_status.configure(text=status)
+        self.loading_canvas.itemconfigure(self.loading_percent, text="")
+        self._animate_loading_ring()
+
+    def _animate_loading_ring(self) -> None:
+        self.startup_animation_id = None
+        if self.closing or not self.startup_indeterminate:
+            return
+        self.startup_angle = (self.startup_angle - 12) % 360
+        self.loading_canvas.itemconfigure(self.loading_arc, start=self.startup_angle, extent=-95)
+        self.startup_animation_id = self.root.after(80, self._animate_loading_ring)
+
+    def _apply_initial_data(self, mailboxes, folders) -> None:
+        self.mailbox_combo["values"] = mailboxes
+        if mailboxes:
+            self.mailbox.set(mailboxes[0])
+        self._apply_folder_data(folders)
+        self.startup_logger.write("Dados aplicados na interface")
+
+    def _apply_folder_data(self, folders, selected_path: str = "") -> None:
+        values = [f"{'    ' * depth}{name}" for depth, name, _path in folders]
+        self.folder_combo["values"] = values
+        self._folder_options = {value: path for value, (_depth, _name, path) in zip(values, folders)}
+        if values:
+            available_paths = {path for _depth, _name, path in folders}
+            if selected_path in available_paths:
+                self.folder_path.set(selected_path)
+            else:
+                self.folder_combo.current(0)
+                self.folder_path.set(folders[0][2])
+
+    def _complete_initialization(self, mailboxes, folders) -> None:
+        self._apply_initial_data(mailboxes, folders)
+        self._set_startup_progress(100, "Aplicação pronta")
+        self.startup_indeterminate = False
+        self.main_frame.pack(fill="both", expand=True)
+        self.loading_frame.lift()
+        self.root.after_idle(self._reveal_main_interface)
+
+    def _reveal_main_interface(self) -> None:
+        if self.closing:
+            return
+        self.loading_frame.destroy()
+        self.mailbox_combo.focus_set()
+        self.startup_logger.write("Interface pronta; tempo total registrado neste marcador")
+        self.root.after(1500, self._start_update_check)
+
+    def _show_startup_warning(self) -> None:
+        if not self.closing:
+            messagebox.showwarning(
+                "Pastas do Outlook indisponíveis",
+                "As caixas foram carregadas, mas não foi possível listar as pastas iniciais. "
+                f"Tente selecionar novamente a caixa. Detalhes técnicos:\n{self.startup_logger.path}",
+                parent=self.root,
+            )
+
+    def _fail_initialization(self, details: str) -> None:
+        self.startup_indeterminate = False
+        self.loading_canvas.itemconfigure(self.loading_arc, outline="#CF222E", extent=-360)
+        self.loading_canvas.itemconfigure(self.loading_percent, text="!", fill="#CF222E")
+        self.loading_status.configure(text="Não foi possível conectar ao Outlook", foreground="#CF222E")
+        self.loading_detail.configure(text="A interface continuará disponível para uma nova tentativa.")
+        messagebox.showerror(
+            "Outlook indisponível",
+            "Não foi possível carregar os dados iniciais do Outlook. "
+            f"Consulte o log técnico em:\n{self.startup_logger.path}",
+            parent=self.root,
+        )
+        if not self.closing:
+            self.main_frame.pack(fill="both", expand=True)
+            self.loading_frame.lift()
+            self.root.after_idle(self._reveal_after_startup_failure)
+
+    def _reveal_after_startup_failure(self) -> None:
+        if self.closing:
+            return
+        self.loading_frame.destroy()
+        self.startup_logger.write("Interface liberada após falha controlada")
+        self.root.after(1500, self._start_update_check)
+
     def _add_segment(self, parent, variable, width, maximum, *, minimum=0) -> None:
         validation = (self.root.register(self._validate_segment), "%P", str(width))
         entry = ttk.Entry(
@@ -177,19 +407,23 @@ class ExtractorWindow:
             variable.set(f"{minimum:0{int(entry.cget('width'))}d}")
 
     def _show_calendar(self) -> None:
+        if self._recover_calendar_popup():
+            return
         try:
             selected = date(int(self.date_year.get()), int(self.date_month.get()), int(self.date_day.get()))
         except ValueError:
             selected = date.today()
         popup = tk.Toplevel(self.root)
+        self.calendar_popup = popup
         popup.title("Selecionar data")
         self._set_icon_for(popup)
         popup.transient(self.root)
         popup.resizable(False, False)
+        popup.protocol("WM_DELETE_WINDOW", self._close_calendar)
+        popup.bind("<Destroy>", self._on_calendar_destroy, add="+")
         month = [selected.year, selected.month]
         selected_date = [selected]
         today = date.today()
-        self._configure_calendar_styles()
         header = ttk.Frame(popup, padding=8)
         header.pack(fill="x")
         title = ttk.Label(header, width=18, anchor="center")
@@ -215,17 +449,83 @@ class ExtractorWindow:
             text="Hoje",
             command=lambda: self._select_today(body, month, title, selected_date, today),
         ).pack(side="left")
-        ttk.Button(actions, text="Fechar", command=popup.destroy).pack(side="right")
+        ttk.Button(actions, text="Fechar", command=self._close_calendar).pack(side="right")
         self._render_calendar(body, month, 0, title, selected_date, today)
 
+    def _recover_calendar_popup(self) -> bool:
+        popup = self.calendar_popup
+        if popup is None:
+            return False
+        try:
+            if not popup.winfo_exists():
+                self.calendar_popup = None
+                return False
+            popup.deiconify()
+            popup.lift()
+            popup.focus_set()
+            return True
+        except tk.TclError:
+            self.calendar_popup = None
+            return False
+
+    def _close_calendar(self) -> None:
+        popup = self.calendar_popup
+        self.calendar_popup = None
+        if popup is None:
+            return
+        try:
+            if popup.winfo_exists():
+                try:
+                    popup.grab_release()
+                except tk.TclError:
+                    pass
+                popup.destroy()
+        except tk.TclError:
+            pass
+
+    def _on_calendar_destroy(self, event) -> None:
+        if event.widget is self.calendar_popup:
+            self.calendar_popup = None
+
+    def _close_application(self) -> None:
+        self.closing = True
+        stop_event = getattr(self, "startup_stop_event", None)
+        if stop_event is not None:
+            stop_event.set()
+        for callback_id in (
+            getattr(self, "startup_animation_id", None),
+            getattr(self, "startup_start_id", None),
+            getattr(self, "startup_poll_id", None),
+            getattr(self, "startup_slow_id", None),
+        ):
+            if callback_id is not None:
+                try:
+                    self.root.after_cancel(callback_id)
+                except tk.TclError:
+                    pass
+        self._close_calendar()
+        self._close_about()
+        self.root.destroy()
+
     @staticmethod
-    def _configure_calendar_styles() -> None:
-        style = ttk.Style()
-        style.configure("Calendar.Today.TButton", foreground="#126b2e")
-        style.configure("Calendar.Selected.TButton", foreground="#ffffff", background="#0563c1")
-        style.map("Calendar.Selected.TButton", background=[("active", "#034d96")])
-        style.configure("Calendar.TodaySelected.TButton", foreground="#ffffff", background="#6f42c1")
-        style.map("Calendar.TodaySelected.TButton", background=[("active", "#59359b")])
+    def _style_calendar_day(button: tk.Button, state: str, *, hovered: bool = False) -> None:
+        palette = CALENDAR_DAY_PALETTE[state]
+        background = palette["active_background"] if hovered else palette["background"]
+        button.configure(
+            background=background,
+            foreground=palette["foreground"],
+            activebackground=palette["active_background"],
+            activeforeground=palette["foreground"],
+            highlightbackground=palette["border"],
+            highlightcolor="#0969DA",
+            highlightthickness=2,
+            borderwidth=1,
+            relief="solid",
+            font=("Segoe UI", 9, "bold" if state in {"today", "today_selected"} else "normal"),
+        )
+
+    def _calendar_day_hover(self, button: tk.Button, hovered: bool) -> None:
+        self._style_calendar_day(button, button.calendar_state, hovered=hovered)
 
     def _render_calendar(self, body, month, change, title, selected_date, today) -> None:
         if change:
@@ -235,26 +535,27 @@ class ExtractorWindow:
         title.configure(text=month_title(month[0], month[1]))
         for column, name in enumerate(WEEKDAY_NAMES_SUNDAY_FIRST):
             ttk.Label(body, text=name, width=4, anchor="center").grid(row=0, column=column)
-        styles = {
-            "normal": "TButton",
-            "today": "Calendar.Today.TButton",
-            "selected": "Calendar.Selected.TButton",
-            "today_selected": "Calendar.TodaySelected.TButton",
-        }
         for row, week in enumerate(month_weeks(month[0], month[1]), start=1):
             for column, day_number in enumerate(week):
                 if not day_number:
                     continue
                 candidate = date(month[0], month[1], day_number)
-                button = ttk.Button(
+                state = day_state(candidate, today, selected_date[0])
+                button = tk.Button(
                     body,
                     text=str(day_number),
-                    width=4,
-                    style=styles[day_state(candidate, today, selected_date[0])],
+                    width=3,
+                    height=1,
+                    cursor="hand2",
+                    takefocus=True,
                     command=lambda day=day_number: self._choose_date(
                         day, month, body, title, selected_date, today
                     ),
                 )
+                button.calendar_state = state
+                self._style_calendar_day(button, state)
+                button.bind("<Enter>", lambda _event, item=button: self._calendar_day_hover(item, True))
+                button.bind("<Leave>", lambda _event, item=button: self._calendar_day_hover(item, False))
                 button.grid(row=row, column=column, padx=1, pady=1)
 
     def _choose_date(self, day, month, body, title, selected_date, today) -> None:
@@ -451,6 +752,8 @@ class ExtractorWindow:
         link.bind("<Button-1>", lambda _event: webbrowser.open(target))
 
     def _load_mailboxes(self) -> None:
+        from .outlook import OutlookEmailSource, OutlookUnavailableError
+
         try:
             mailboxes = OutlookEmailSource().list_mailboxes()
         except OutlookUnavailableError as exc:
@@ -469,6 +772,8 @@ class ExtractorWindow:
         self._load_inbox_folders(preserve_selection=True)
 
     def _load_inbox_folders(self, preserve_selection: bool = False) -> None:
+        from .outlook import OutlookEmailSource, OutlookUnavailableError
+
         selected_path = self.folder_path.get().strip() if preserve_selection else ""
         try:
             folders = OutlookEmailSource().list_inbox_folders(self.mailbox.get(), max_depth=2)
@@ -477,16 +782,7 @@ class ExtractorWindow:
             self.folder_path.set("")
             self._write_log(str(exc))
             return
-        values = [f"{'    ' * depth}{name}" for depth, name, _path in folders]
-        self.folder_combo["values"] = values
-        self._folder_options = {value: path for value, (_depth, _name, path) in zip(values, folders)}
-        if values:
-            available_paths = {path for _depth, _name, path in folders}
-            if selected_path in available_paths:
-                self.folder_path.set(selected_path)
-            else:
-                self.folder_combo.current(0)
-                self.folder_path.set(folders[0][2])
+        self._apply_folder_data(folders, selected_path)
 
     def _folder_selected(self, _event=None) -> None:
         self.folder_path.set(self._folder_options.get(self.folder_combo.get(), ""))
@@ -550,6 +846,8 @@ class ExtractorWindow:
         com_initialized = False
         try:
             import pythoncom
+            from .export import export_xlsx
+            from .outlook import OutlookEmailSource
 
             pythoncom.CoInitialize()
             com_initialized = True
@@ -580,6 +878,25 @@ class ExtractorWindow:
         self.progress_queue.put(("detail", message))
 
     def _process_progress(self) -> None:
+        if self.closing:
+            return
+        try:
+            while True:
+                event, value = self.startup_queue.get_nowait()
+                if event == "progress":
+                    progress, status = value
+                    self._set_startup_progress(progress, status)
+                elif event == "indeterminate":
+                    self._set_startup_indeterminate(str(value))
+                elif event == "result":
+                    mailboxes, folders = value
+                    self._complete_initialization(mailboxes, folders)
+                elif event == "startup_error":
+                    self._fail_initialization(str(value))
+                elif event == "startup_warning":
+                    self._show_startup_warning()
+        except Empty:
+            pass
         try:
             while True:
                 event, value = self.progress_queue.get_nowait()
@@ -651,7 +968,8 @@ class ExtractorWindow:
                     )
         except Empty:
             pass
-        self.root.after(100, self._process_progress)
+        if not self.closing:
+            self.startup_poll_id = self.root.after(80, self._process_progress)
 
     def _complete_downloaded_update(self, downloaded: DownloadedUpdate) -> None:
         self._write_log(
@@ -739,17 +1057,7 @@ class ExtractorWindow:
                 log_file.write(f"[{timestamp}] {message}\n")
 
 
-def start_app() -> None:
-    com_initialized = False
-    try:
-        # Explicit initialization is required on some Office/Windows builds.
-        import pythoncom
-
-        pythoncom.CoInitialize()
-        com_initialized = True
-        root = tk.Tk()
-        ExtractorWindow(root)
-        root.mainloop()
-    finally:
-        if com_initialized:
-            pythoncom.CoUninitialize()
+def start_app(process_started_at: float | None = None) -> None:
+    root = tk.Tk()
+    ExtractorWindow(root, process_started_at)
+    root.mainloop()

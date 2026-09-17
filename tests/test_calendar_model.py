@@ -2,6 +2,7 @@ import unittest
 from datetime import date
 
 from email_extractor.calendar_model import (
+    CALENDAR_DAY_PALETTE,
     WEEKDAY_NAMES_SUNDAY_FIRST,
     day_state,
     month_title,
@@ -43,3 +44,16 @@ class CalendarModelTests(unittest.TestCase):
         self.assertEqual(day_state(today, today, selected), "today")
         self.assertEqual(day_state(selected, today, selected), "selected")
         self.assertEqual(day_state(today, today, today), "today_selected")
+
+    def test_normal_date_has_normal_state(self) -> None:
+        self.assertEqual(
+            day_state(date(2026, 9, 10), date(2026, 9, 17), date(2026, 9, 21)),
+            "normal",
+        )
+
+    def test_palette_has_distinct_high_contrast_states(self) -> None:
+        self.assertEqual(set(CALENDAR_DAY_PALETTE), {"normal", "today", "selected", "today_selected"})
+        self.assertEqual(CALENDAR_DAY_PALETTE["normal"]["background"], "#FFFFFF")
+        self.assertEqual(CALENDAR_DAY_PALETTE["today"]["background"], "#DDF4FF")
+        self.assertEqual(CALENDAR_DAY_PALETTE["selected"]["background"], "#0969DA")
+        self.assertEqual(CALENDAR_DAY_PALETTE["today_selected"]["background"], "#0550AE")
