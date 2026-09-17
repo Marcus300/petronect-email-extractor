@@ -14,9 +14,15 @@ try:
         sender_is_allowed,
         subject_matches,
         subject_terms,
-        uses_room_layout,
+        structured_subject_category,
     )
-    from .petronect import extrair_tipo_mensagem, normalize_body
+    from .petronect import (
+        extrair_tipo_mensagem,
+        extrair_tipo_mensagem_cancelada,
+        extrair_tipo_mensagem_prorrogada,
+        normalize_body,
+    )
+    from .localization import alphabetical_key
 except ImportError:
     # Support direct diagnostics such as `python email_extractor/outlook.py`.
     from cleaning import find_email_id
@@ -27,9 +33,15 @@ except ImportError:
         sender_is_allowed,
         subject_matches,
         subject_terms,
-        uses_room_layout,
+        structured_subject_category,
     )
-    from petronect import extrair_tipo_mensagem, normalize_body
+    from petronect import (
+        extrair_tipo_mensagem,
+        extrair_tipo_mensagem_cancelada,
+        extrair_tipo_mensagem_prorrogada,
+        normalize_body,
+    )
+    from localization import alphabetical_key
 
 
 class OutlookUnavailableError(RuntimeError):
@@ -62,10 +74,11 @@ class OutlookEmailSource:
         return folders
 
     def list_mailboxes(self) -> list[str]:
-        return [
+        mailboxes = [
             self._namespace.Folders.Item(index).Name
             for index in range(1, self._namespace.Folders.Count + 1)
         ]
+        return sorted(dict.fromkeys(mailboxes), key=alphabetical_key)
 
     def list_inbox_folders(self, mailbox_name: str, max_depth: int = 2) -> list[tuple[int, str, str]]:
         mailbox = self._namespace.Folders.Item(mailbox_name)
@@ -166,11 +179,24 @@ class OutlookEmailSource:
             subject_items += 1
             subject = str(getattr(message, "Subject", ""))
             body = str(getattr(message, "Body", ""))
-            if uses_room_layout(criteria.subject):
+            structured_category = structured_subject_category(subject, criteria.subject)
+            if structured_category == "sala":
                 parsed = extrair_tipo_mensagem(body)
                 if on_progress:
                     for warning in parsed.warnings:
                         on_progress(f"Aviso no tratamento Petronect: {warning}")
+                tipo, mensagem = parsed.tipo, parsed.mensagem
+            elif structured_category == "prorrogada":
+                parsed = extrair_tipo_mensagem_prorrogada(subject, body)
+                if on_progress:
+                    for warning in parsed.warnings:
+                        on_progress(f"Aviso no tratamento Prorrogada: {warning}")
+                tipo, mensagem = parsed.tipo, parsed.mensagem
+            elif structured_category == "cancelada":
+                parsed = extrair_tipo_mensagem_cancelada(subject, body)
+                if on_progress:
+                    for warning in parsed.warnings:
+                        on_progress(f"Aviso no tratamento Cancelada: {warning}")
                 tipo, mensagem = parsed.tipo, parsed.mensagem
             else:
                 tipo, mensagem = "", ""
@@ -241,8 +267,9 @@ class OutlookEmailSource:
         folders.append((depth, folder.Name, folder.FolderPath))
         if depth >= max_depth:
             return
-        for index in range(1, folder.Folders.Count + 1):
-            self._append_limited_folders(folders, folder.Folders.Item(index), depth + 1, max_depth)
+        children = [folder.Folders.Item(index) for index in range(1, folder.Folders.Count + 1)]
+        for child in sorted(children, key=lambda item: alphabetical_key(str(item.Name))):
+            self._append_limited_folders(folders, child, depth + 1, max_depth)
 
     def _find_folder(self, folder, folder_path: str):
         if folder.FolderPath == folder_path:

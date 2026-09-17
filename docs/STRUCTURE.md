@@ -10,7 +10,7 @@ sala/
 ├── docs/
 │   ├── logo/
 │   │   ├── logo.ico            # Ícone das janelas e do executável
-│   │   └── logo.png            # Logo exibido no About e no README
+│   │   └── logo.png            # Logo exibido na janela Sobre e no README
 │   ├── CODE_OF_CONDUCT.md
 │   ├── CONTRIBUTING.md
 │   ├── FLUXOGRAMA.mmd
@@ -18,14 +18,17 @@ sala/
 │   └── STRUCTURE.md
 ├── email_extractor/
 │   ├── cleaning.py             # Limpeza do conteúdo e extração do ID
+│   ├── calendar_model.py       # Cálculos do calendário PT-BR iniciado no domingo
 │   ├── diagnostics.py          # Metadados e logs de falha
 │   ├── export.py               # Geração atômica do Excel
 │   ├── models.py               # Modelos de dados
+│   ├── localization.py         # Textos PT-BR e ordenação alfabética determinística
 │   ├── outlook.py              # Leitura recursiva do Outlook
 │   ├── paths.py                # Pastas do usuário e destino padrão do Excel
 │   ├── petronect.py            # Interpretação das notificações
 │   ├── ui.py                   # Interface gráfica
-│   └── update_checker.py       # Consulta da release mais recente no GitHub
+│   ├── update_checker.py       # Consulta da release mais recente no GitHub
+│   └── updater.py              # Download, validação e substituição segura do executável
 ├── tests/                      # Testes automatizados
 ├── scripts/
 │   └── verify_release.py       # Confere tag e metadados de versão

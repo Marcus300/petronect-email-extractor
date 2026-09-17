@@ -1,4 +1,4 @@
-from datetime import datetime, date, timedelta
+from datetime import datetime, date
 import os
 import sys
 from pathlib import Path
@@ -10,11 +10,19 @@ from tkinter.scrolledtext import ScrolledText
 import webbrowser
 
 from .diagnostics import format_exception, runtime_metadata, write_update_check_log
+from .calendar_model import (
+    WEEKDAY_NAMES_SUNDAY_FIRST,
+    day_state,
+    month_title,
+    month_weeks,
+    shift_month,
+)
 from .export import export_xlsx
 from .models import SUBJECT_OPTIONS, SearchCriteria
 from .outlook import OutlookEmailSource, OutlookUnavailableError
 from .paths import default_excel_path
 from .update_checker import UpdateStatus, check_for_updates
+from .updater import DownloadedUpdate, download_update, schedule_executable_replacement
 from .version import __version__
 
 
@@ -47,6 +55,7 @@ class ExtractorWindow:
         self.latest_output_path: Path | None = None
         self.update_status: UpdateStatus | None = None
         self.update_check_in_progress = False
+        self.update_download_in_progress = False
         self.update_notification_version = ""
         self.about_popup: tk.Toplevel | None = None
         self.latest_version_label: ttk.Label | None = None
@@ -75,13 +84,18 @@ class ExtractorWindow:
         frame.rowconfigure(1, weight=1)
         toolbar = ttk.Frame(frame)
         toolbar.grid(row=0, column=2, sticky="e", pady=(0, 8))
-        ttk.Button(toolbar, text="About", command=self._show_about).pack()
+        ttk.Button(toolbar, text="Sobre", command=self._show_about).pack()
         ttk.Label(frame, text="Caixa de pesquisa").grid(row=0, column=0, sticky="w", pady=6)
         self.mailbox_combo = ttk.Combobox(frame, textvariable=self.mailbox, state="readonly")
         self.mailbox_combo.grid(row=0, column=1, sticky="ew", pady=6)
         self.mailbox_combo.bind("<<ComboboxSelected>>", self._mailbox_selected)
         ttk.Label(frame, text="Pasta e subpastas (até 2 níveis)").grid(row=1, column=0, sticky="w", pady=6)
-        self.folder_combo = ttk.Combobox(frame, textvariable=self.folder_path, state="readonly")
+        self.folder_combo = ttk.Combobox(
+            frame,
+            textvariable=self.folder_path,
+            state="readonly",
+            postcommand=self._refresh_inbox_folders,
+        )
         self.folder_combo.grid(row=1, column=1, sticky="ew", pady=6)
         self.folder_combo.bind("<<ComboboxSelected>>", self._folder_selected)
         ttk.Label(frame, text="Data inicial").grid(row=2, column=0, sticky="w", pady=6)
@@ -173,42 +187,86 @@ class ExtractorWindow:
         popup.transient(self.root)
         popup.resizable(False, False)
         month = [selected.year, selected.month]
+        selected_date = [selected]
+        today = date.today()
+        self._configure_calendar_styles()
         header = ttk.Frame(popup, padding=8)
         header.pack(fill="x")
-        ttk.Button(header, text="<", width=3, command=lambda: self._render_calendar(body, month, -1)).pack(side="left")
         title = ttk.Label(header, width=18, anchor="center")
         title.pack(side="left", expand=True)
-        ttk.Button(header, text=">", width=3, command=lambda: self._render_calendar(body, month, 1)).pack(side="right")
         body = ttk.Frame(popup, padding=(8, 0, 8, 8))
         body.pack()
-        self._render_calendar(body, month, 0, title, popup)
+        ttk.Button(
+            header,
+            text="<",
+            width=3,
+            command=lambda: self._render_calendar(body, month, -1, title, selected_date, today),
+        ).pack(side="left", before=title)
+        ttk.Button(
+            header,
+            text=">",
+            width=3,
+            command=lambda: self._render_calendar(body, month, 1, title, selected_date, today),
+        ).pack(side="right")
+        actions = ttk.Frame(popup, padding=(8, 0, 8, 8))
+        actions.pack(fill="x")
+        ttk.Button(
+            actions,
+            text="Hoje",
+            command=lambda: self._select_today(body, month, title, selected_date, today),
+        ).pack(side="left")
+        ttk.Button(actions, text="Fechar", command=popup.destroy).pack(side="right")
+        self._render_calendar(body, month, 0, title, selected_date, today)
 
-    def _render_calendar(self, body, month, change, title=None, popup=None) -> None:
+    @staticmethod
+    def _configure_calendar_styles() -> None:
+        style = ttk.Style()
+        style.configure("Calendar.Today.TButton", foreground="#126b2e")
+        style.configure("Calendar.Selected.TButton", foreground="#ffffff", background="#0563c1")
+        style.map("Calendar.Selected.TButton", background=[("active", "#034d96")])
+        style.configure("Calendar.TodaySelected.TButton", foreground="#ffffff", background="#6f42c1")
+        style.map("Calendar.TodaySelected.TButton", background=[("active", "#59359b")])
+
+    def _render_calendar(self, body, month, change, title, selected_date, today) -> None:
         if change:
-            month[1] += change
-            if month[1] == 13:
-                month[:] = [month[0] + 1, 1]
-            elif month[1] == 0:
-                month[:] = [month[0] - 1, 12]
+            month[:] = shift_month(month[0], month[1], change)
         for child in body.winfo_children():
             child.destroy()
-        current = date(month[0], month[1], 1)
-        if title:
-            title.configure(text=current.strftime("%B %Y"))
-        for column, name in enumerate(("Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom")):
+        title.configure(text=month_title(month[0], month[1]))
+        for column, name in enumerate(WEEKDAY_NAMES_SUNDAY_FIRST):
             ttk.Label(body, text=name, width=4, anchor="center").grid(row=0, column=column)
-        first_weekday = (current.weekday() + 1) % 7
-        days = (date(month[0] + (month[1] == 12), month[1] % 12 + 1, 1) - timedelta(days=1)).day
-        for day_number in range(1, days + 1):
-            position = first_weekday + day_number - 1
-            button = ttk.Button(body, text=str(day_number), width=4, command=lambda day=day_number: self._choose_date(day, month, popup))
-            button.grid(row=1 + position // 7, column=position % 7, padx=1, pady=1)
+        styles = {
+            "normal": "TButton",
+            "today": "Calendar.Today.TButton",
+            "selected": "Calendar.Selected.TButton",
+            "today_selected": "Calendar.TodaySelected.TButton",
+        }
+        for row, week in enumerate(month_weeks(month[0], month[1]), start=1):
+            for column, day_number in enumerate(week):
+                if not day_number:
+                    continue
+                candidate = date(month[0], month[1], day_number)
+                button = ttk.Button(
+                    body,
+                    text=str(day_number),
+                    width=4,
+                    style=styles[day_state(candidate, today, selected_date[0])],
+                    command=lambda day=day_number: self._choose_date(
+                        day, month, body, title, selected_date, today
+                    ),
+                )
+                button.grid(row=row, column=column, padx=1, pady=1)
 
-    def _choose_date(self, day, month, popup) -> None:
+    def _choose_date(self, day, month, body, title, selected_date, today) -> None:
+        selected_date[0] = date(month[0], month[1], day)
         self.date_day.set(f"{day:02d}")
         self.date_month.set(f"{month[1]:02d}")
         self.date_year.set(f"{month[0]:04d}")
-        popup.destroy()
+        self._render_calendar(body, month, 0, title, selected_date, today)
+
+    def _select_today(self, body, month, title, selected_date, today) -> None:
+        month[:] = [today.year, today.month]
+        self._choose_date(today.day, month, body, title, selected_date, today)
 
     def _start_datetime(self) -> datetime:
         return datetime.strptime(
@@ -224,7 +282,7 @@ class ExtractorWindow:
             return
         popup = tk.Toplevel(self.root)
         self.about_popup = popup
-        popup.title("About - Petronect Email Extractor")
+        popup.title("Sobre - Petronect Email Extractor")
         self._set_icon_for(popup)
         popup.transient(self.root)
         popup.resizable(False, False)
@@ -292,7 +350,10 @@ class ExtractorWindow:
     def _refresh_update_controls(self) -> None:
         if self.latest_version_label is None or not self.latest_version_label.winfo_exists():
             return
-        if self.update_check_in_progress:
+        if self.update_download_in_progress:
+            text = "Atualização: baixando..."
+            button_state = "disabled"
+        elif self.update_check_in_progress:
             text = "Última versão: consultando..."
             button_state = "disabled"
         elif self.update_status is None:
@@ -306,8 +367,25 @@ class ExtractorWindow:
             self.update_button.configure(state=button_state)
 
     def _open_update(self) -> None:
-        if self.update_status and self.update_status.update_available and self.update_status.release_url:
-            webbrowser.open(self.update_status.release_url)
+        if not self.update_status or not self.update_status.update_available:
+            return
+        if self.update_download_in_progress:
+            return
+        self.update_download_in_progress = True
+        self._refresh_update_controls()
+        Thread(target=self._download_update_worker, args=(self.update_status,), daemon=True).start()
+
+    def _download_update_worker(self, status: UpdateStatus) -> None:
+        try:
+            downloaded = download_update(
+                status,
+                on_progress=lambda current, total: self.progress_queue.put(
+                    ("update_progress", (current, total))
+                ),
+            )
+            self.progress_queue.put(("update_downloaded", downloaded))
+        except Exception as exc:
+            self.progress_queue.put(("update_download_error", format_exception(exc)))
 
     def _show_update_popup(self, status: UpdateStatus) -> None:
         popup = tk.Toplevel(self.root)
@@ -386,7 +464,12 @@ class ExtractorWindow:
     def _mailbox_selected(self, _event=None) -> None:
         self._load_inbox_folders()
 
-    def _load_inbox_folders(self) -> None:
+    def _refresh_inbox_folders(self) -> None:
+        """Reload Outlook folders immediately before opening the drop-down."""
+        self._load_inbox_folders(preserve_selection=True)
+
+    def _load_inbox_folders(self, preserve_selection: bool = False) -> None:
+        selected_path = self.folder_path.get().strip() if preserve_selection else ""
         try:
             folders = OutlookEmailSource().list_inbox_folders(self.mailbox.get(), max_depth=2)
         except OutlookUnavailableError as exc:
@@ -398,8 +481,12 @@ class ExtractorWindow:
         self.folder_combo["values"] = values
         self._folder_options = {value: path for value, (_depth, _name, path) in zip(values, folders)}
         if values:
-            self.folder_combo.current(0)
-            self.folder_path.set(folders[0][2])
+            available_paths = {path for _depth, _name, path in folders}
+            if selected_path in available_paths:
+                self.folder_path.set(selected_path)
+            else:
+                self.folder_combo.current(0)
+                self.folder_path.set(folders[0][2])
 
     def _folder_selected(self, _event=None) -> None:
         self.folder_path.set(self._folder_options.get(self.folder_combo.get(), ""))
@@ -421,7 +508,15 @@ class ExtractorWindow:
             output_text = self.output_path.get().strip()
             if not all([self.mailbox.get().strip(), self.folder_path.get().strip(), output_text]):
                 raise ValueError("Selecione uma pasta e preencha data e destino do Excel.")
-            criteria = SearchCriteria(self.mailbox.get().strip(), self.folder_path.get().strip(), self._start_datetime(), self.subject.get().strip(), Path(output_text))
+            start_at = self._start_datetime()
+            self._validate_start_not_future(start_at)
+            criteria = SearchCriteria(
+                self.mailbox.get().strip(),
+                self.folder_path.get().strip(),
+                start_at,
+                self.subject.get().strip(),
+                Path(output_text),
+            )
         except ValueError as exc:
             messagebox.showerror("Dados inválidos", str(exc), parent=self.root)
             return
@@ -442,6 +537,14 @@ class ExtractorWindow:
         self._write_log(f"Iniciando pesquisa em: {criteria.folder_path}")
         self.worker = Thread(target=self._worker_run, args=(criteria,), daemon=True)
         self.worker.start()
+
+    @staticmethod
+    def _validate_start_not_future(start_at: datetime, now: datetime | None = None) -> None:
+        current = now or datetime.now()
+        if start_at > current:
+            raise ValueError(
+                "A data e a hora inicial não podem ser posteriores à data e hora atuais."
+            )
 
     def _worker_run(self, criteria: SearchCriteria) -> None:
         com_initialized = False
@@ -522,9 +625,66 @@ class ExtractorWindow:
                     if value:
                         message += f" Detalhes: {value}"
                     self._write_log(message)
+                elif event == "update_progress":
+                    current, total = value
+                    if self.latest_version_label is not None and self.latest_version_label.winfo_exists():
+                        if total:
+                            percent = min(100, int(current * 100 / total))
+                            self.latest_version_label.configure(text=f"Atualização: baixando... {percent}%")
+                        else:
+                            self.latest_version_label.configure(
+                                text=f"Atualização: baixando... {current // 1024} KB"
+                            )
+                elif event == "update_downloaded":
+                    self.update_download_in_progress = False
+                    self._refresh_update_controls()
+                    self._complete_downloaded_update(value)
+                elif event == "update_download_error":
+                    self.update_download_in_progress = False
+                    self._refresh_update_controls()
+                    self._write_log(f"Falha ao baixar atualização:\n{value}")
+                    messagebox.showerror(
+                        "Falha na atualização",
+                        "Não foi possível baixar ou validar a atualização. "
+                        "O executável atual não foi alterado. Consulte o log para mais detalhes.",
+                        parent=self.root,
+                    )
         except Empty:
             pass
         self.root.after(100, self._process_progress)
+
+    def _complete_downloaded_update(self, downloaded: DownloadedUpdate) -> None:
+        self._write_log(
+            f"Atualização {downloaded.version} baixada e validada: "
+            f"{downloaded.size} bytes; SHA-256={downloaded.sha256}"
+        )
+        if not getattr(sys, "frozen", False):
+            messagebox.showinfo(
+                "Atualização validada",
+                "A atualização foi baixada e validada em ambiente de desenvolvimento.\n\n"
+                f"Arquivo: {downloaded.path}\n\n"
+                "O código-fonte em execução não será substituído automaticamente.",
+                parent=self.root,
+            )
+            return
+        try:
+            schedule_executable_replacement(downloaded, Path(sys.executable))
+        except Exception as exc:
+            self._write_log(f"Falha ao preparar instalação da atualização:\n{format_exception(exc)}")
+            messagebox.showerror(
+                "Falha na atualização",
+                "A atualização foi baixada, mas não foi possível preparar sua instalação. "
+                "O executável atual não foi alterado.",
+                parent=self.root,
+            )
+            return
+        messagebox.showinfo(
+            "Atualização pronta",
+            "A atualização foi baixada e validada. A aplicação será fechada, "
+            "atualizada e aberta novamente.",
+            parent=self.root,
+        )
+        self.root.destroy()
 
     def _cancel(self) -> None:
         if self.worker and self.worker.is_alive():

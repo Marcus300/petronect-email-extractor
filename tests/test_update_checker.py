@@ -13,13 +13,21 @@ class UpdateCheckerTests(unittest.TestCase):
 
     @patch("email_extractor.update_checker.urlopen")
     def test_checker_reads_latest_github_release(self, urlopen) -> None:
-        response = io.BytesIO(b'{"tag_name":"v0.0.2.0","html_url":"https://example.test/release"}')
+        response = io.BytesIO(
+            b'{"tag_name":"v0.0.2.0","html_url":"https://example.test/release",'
+            b'"assets":[{"name":"Petronect.Email.Extractor.v0.0.2.0.exe",'
+            b'"browser_download_url":"https://github.com/marcus300/petronect-email-extractor/'
+            b'releases/download/v0.0.2.0/Petronect.Email.Extractor.v0.0.2.0.exe",'
+            b'"size":1234}]}'
+        )
         urlopen.return_value = response
         status = check_for_updates("0.0.1.0")
         self.assertTrue(status.enabled)
         self.assertTrue(status.update_available)
         self.assertEqual(status.latest_version, "0.0.2.0")
         self.assertEqual(status.source, "github_api")
+        self.assertEqual(status.asset_name, "Petronect.Email.Extractor.v0.0.2.0.exe")
+        self.assertEqual(status.asset_size, 1234)
 
     @patch(
         "email_extractor.update_checker._latest_release_url_via_windows",
@@ -35,6 +43,8 @@ class UpdateCheckerTests(unittest.TestCase):
             status.release_url,
             "https://github.com/marcus300/petronect-email-extractor/releases/tag/v0.0.1.2",
         )
+        self.assertEqual(status.asset_name, "Petronect.Email.Extractor.v0.0.1.2.exe")
+        self.assertIn("/releases/download/v0.0.1.2/", status.asset_url)
 
     @patch(
         "email_extractor.update_checker._latest_release_url_via_windows",

@@ -61,6 +61,139 @@ class ExportTests(unittest.TestCase):
             workbook.close()
             self.assertEqual(headers, ("Data e hora de recebimento", "Assunto", "ID", "Body"))
 
+    def test_prorrogada_and_sala_have_identical_excel_structure(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            sala_output = base / "sala.xlsx"
+            prorrogada_output = base / "prorrogada.xlsx"
+            sala_record = EmailRecord(
+                datetime(2026, 9, 17, 13, 0), "7001234567", "SALA", "Circular", "Mensagem", "", "Inbox"
+            )
+            prorrogada_record = EmailRecord(
+                datetime(2026, 9, 17, 14, 0),
+                "7007654321",
+                "Oportunidade Prorrogada",
+                "Prorrogação de Oportunidade",
+                "Nova data final: “22.09.2026, 20:00:00” (Horário de Brasília)",
+                "",
+                "Inbox",
+            )
+            export_xlsx([sala_record], sala_output, subject_filter="Sala")
+            export_xlsx([prorrogada_record], prorrogada_output, subject_filter="Prorrogada")
+            sala_workbook = load_workbook(sala_output)
+            prorrogada_workbook = load_workbook(prorrogada_output)
+            try:
+                sala_sheet = sala_workbook.active
+                prorrogada_sheet = prorrogada_workbook.active
+                self.assertEqual(sala_sheet.title, prorrogada_sheet.title)
+                self.assertEqual(sala_sheet.max_column, prorrogada_sheet.max_column)
+                self.assertEqual(sala_sheet.freeze_panes, prorrogada_sheet.freeze_panes)
+                self.assertEqual(sala_sheet.auto_filter.ref, prorrogada_sheet.auto_filter.ref)
+                self.assertEqual(
+                    [cell.value for cell in sala_sheet[1]],
+                    [cell.value for cell in prorrogada_sheet[1]],
+                )
+                self.assertEqual(
+                    [sala_sheet.column_dimensions[column].width for column in "ABCDE"],
+                    [prorrogada_sheet.column_dimensions[column].width for column in "ABCDE"],
+                )
+                self.assertEqual(
+                    [cell.style_id for row in sala_sheet.iter_rows() for cell in row],
+                    [cell.style_id for row in prorrogada_sheet.iter_rows() for cell in row],
+                )
+                self.assertEqual(
+                    [cell.number_format for cell in sala_sheet["A"]],
+                    [cell.number_format for cell in prorrogada_sheet["A"]],
+                )
+                self.assertEqual(
+                    [cell.alignment.wrap_text for cell in sala_sheet["E"]],
+                    [cell.alignment.wrap_text for cell in prorrogada_sheet["E"]],
+                )
+            finally:
+                sala_workbook.close()
+                prorrogada_workbook.close()
+
+    def test_cancelada_and_sala_have_identical_excel_structure_and_zero_is_preserved(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            sala_output = base / "sala.xlsx"
+            cancelada_output = base / "cancelada.xlsx"
+            sala_record = EmailRecord(
+                datetime(2026, 9, 17, 13, 0), "7001234567", "SALA", "Circular", "Mensagem", "", "Inbox"
+            )
+            cancelada_record = EmailRecord(
+                datetime(2026, 9, 17, 14, 0),
+                "7007654321",
+                "Oportunidade Cancelada",
+                "Oportunidade Cancelada",
+                "foi cancelada pelo seguinte motivo:\n\n0",
+                "",
+                "Inbox",
+            )
+            export_xlsx([sala_record], sala_output, subject_filter="Sala")
+            export_xlsx([cancelada_record], cancelada_output, subject_filter="Cancelada")
+            sala_workbook = load_workbook(sala_output)
+            cancelada_workbook = load_workbook(cancelada_output)
+            try:
+                sala_sheet = sala_workbook.active
+                cancelada_sheet = cancelada_workbook.active
+                self.assertEqual(
+                    (
+                        sala_sheet.title,
+                        sala_sheet.max_column,
+                        sala_sheet.freeze_panes,
+                        sala_sheet.auto_filter.ref,
+                        [cell.value for cell in sala_sheet[1]],
+                        [sala_sheet.column_dimensions[column].width for column in "ABCDE"],
+                        [cell.style_id for row in sala_sheet.iter_rows() for cell in row],
+                    ),
+                    (
+                        cancelada_sheet.title,
+                        cancelada_sheet.max_column,
+                        cancelada_sheet.freeze_panes,
+                        cancelada_sheet.auto_filter.ref,
+                        [cell.value for cell in cancelada_sheet[1]],
+                        [cancelada_sheet.column_dimensions[column].width for column in "ABCDE"],
+                        [cell.style_id for row in cancelada_sheet.iter_rows() for cell in row],
+                    ),
+                )
+                self.assertEqual(
+                    cancelada_sheet["E2"].value,
+                    "foi cancelada pelo seguinte motivo:\n\n0",
+                )
+            finally:
+                sala_workbook.close()
+                cancelada_workbook.close()
+
+    def test_combined_filter_exports_all_three_categories_in_one_structured_workbook(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "conjunto.xlsx"
+            records = [
+                EmailRecord(datetime(2026, 9, 17, 10, 0), "7000000001", "SALA", "Sala", "Mensagem Sala", "", "Inbox"),
+                EmailRecord(datetime(2026, 9, 17, 10, 1), "7000000002", "Prorrogada", "Prorrogação de Oportunidade", "Nova data final", "", "Inbox"),
+                EmailRecord(datetime(2026, 9, 17, 10, 2), "7000000003", "Cancelada", "Oportunidade Cancelada", "foi cancelada pelo seguinte motivo:\n\n0", "", "Inbox"),
+            ]
+            count = export_xlsx(
+                records,
+                output,
+                subject_filter="0.Conjunto (Sala, Prorrogação, Cancelamento)",
+            )
+            workbook = load_workbook(output)
+            try:
+                sheet = workbook.active
+                self.assertEqual(count, 3)
+                self.assertEqual(
+                    tuple(cell.value for cell in sheet[1]),
+                    ("Data e hora de recebimento", "Assunto", "ID", "Tipo", "Mensagem"),
+                )
+                self.assertEqual(sheet.max_row, 4)
+                self.assertEqual(
+                    [sheet.cell(row=row, column=4).value for row in range(2, 5)],
+                    ["Sala", "Prorrogação de Oportunidade", "Oportunidade Cancelada"],
+                )
+            finally:
+                workbook.close()
+
 
 if __name__ == "__main__":
     unittest.main()

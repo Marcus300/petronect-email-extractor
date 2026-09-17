@@ -2,6 +2,44 @@
 
 Este projeto segue tags no formato `vMAJOR.MINOR.PATCH.REVISION`. As versões publicadas permanecem disponíveis no histórico de releases do GitHub.
 
+## [0.0.2.0] — 2026-09-17
+
+### Adicionado
+
+- Parser dedicado para notificações `Prorrogada`, acionado exclusivamente pelo `Subject`.
+- Tipo determinístico `Prorrogação de Oportunidade` para todos os registros da categoria.
+- Extração exclusiva do trecho `Nova data final: “DD.MM.AAAA, HH:MM:SS” (Horário de Brasília)`.
+- Prioridade para o conteúdo posterior a `ZjQcmQRYFpfptBannerEnd`, evitando preheader e banner de segurança.
+- Fallback no Body completo quando o marcador não existe, com seleção da última ocorrência válida em caso de valores diferentes.
+- Avisos de auditoria para fallback, datas finais divergentes e falha de parsing sem descarte do registro.
+- Testes de variações do Subject, datas e horários, preheader, banner, fallback, conteúdo descartado e ausência de mensagem válida.
+- Comparação programática da estrutura dos arquivos Excel de `Sala` e `Prorrogada`.
+- Calendário determinístico em PT-BR, com semana iniciando em domingo, botão `Hoje` e estados visuais distintos para hoje, data selecionada e hoje selecionado.
+- Download automático do executável oficial da última release, com arquivo parcial, validação de origem, nome, tamanho e estrutura PE antes da instalação.
+- Processo auxiliar no Windows para aguardar o encerramento, substituir o executável e reiniciar a aplicação sem corromper o arquivo em uso.
+- Registro do SHA-256 calculado após o download da atualização.
+- Parser dedicado para notificações `Cancelada`, classificadas por qualquer Subject que contenha esse texto sem diferenciar capitalização.
+- Tipo fixo `Oportunidade Cancelada` e extração da mensagem a partir de `foi cancelada pelo seguinte motivo:`.
+- Preservação de motivos normais, curtos, multilinha, vazios e com valor literal `0`.
+- Prioridade para o motivo posterior ao banner de segurança e fallback auditável para o Body completo quando o marcador não existir.
+- Bloqueio da execução antes da criação do log ou acesso ao Outlook quando a data e hora de corte estiverem no futuro.
+- Opção `0.Conjunto (Sala, Prorrogação, Cancelamento)` na lista de assuntos, preservando integralmente o texto entre parênteses.
+- Pesquisa conjunta com correspondência alternativa para `sala`, `prorrogada` ou `cancelada` durante uma única varredura do Outlook.
+
+### Alterado
+
+- O filtro `Prorrogada` passa a localizar qualquer Subject que contenha esse texto, ignorando maiúsculas e minúsculas.
+- `Sala` e `Prorrogada` compartilham a mesma rotina e o mesmo layout estruturado de Excel, sem duplicação da exportação.
+- Os demais filtros preservam o layout genérico com `Body` original.
+- A lista de pastas do Outlook é recarregada ao abrir o campo `Pasta e subpastas`, preservando a seleção atual e exibindo subpastas sincronizadas após a abertura da aplicação.
+- O cabeçalho do calendário passa a acompanhar imediatamente a navegação entre meses e anos, sem depender do idioma configurado no Windows.
+- O botão e o título `About` passam a ser exibidos como `Sobre`.
+- Dropdowns de caixas, subpastas irmãs e assuntos passam a ser ordenados alfabeticamente, sem alterar a hierarquia lógica das pastas.
+- O botão `Atualizar` deixa de abrir a página de Releases e passa a baixar, validar e preparar diretamente o asset oficial publicado no GitHub.
+- `Cancelada` passa a reutilizar exatamente o mesmo schema e layout de Excel de `Sala` e `Prorrogada`.
+- Testes de regressão passam a cobrir conjuntamente os parsers e layouts de `Sala`, `Prorrogada` e `Cancelada`.
+- No filtro conjunto, cada e-mail passa pelo parser determinado pelo próprio Subject e é gravado diretamente no mesmo Excel estruturado, sem pesquisas separadas ou mesclagem posterior.
+
 ## [0.0.1.2] — 2026-09-17
 
 ### Adicionado
@@ -92,3 +130,4 @@ Este projeto segue tags no formato `vMAJOR.MINOR.PATCH.REVISION`. As versões pu
 [0.0.1.0]: https://github.com/marcus300/petronect-email-extractor/releases/tag/v0.0.1.0
 [0.0.1.1]: https://github.com/marcus300/petronect-email-extractor/releases/tag/v0.0.1.1
 [0.0.1.2]: https://github.com/marcus300/petronect-email-extractor/releases/tag/v0.0.1.2
+[0.0.2.0]: https://github.com/marcus300/petronect-email-extractor/releases/tag/v0.0.2.0

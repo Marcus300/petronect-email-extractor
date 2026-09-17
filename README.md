@@ -11,7 +11,7 @@
 <div align="center">
   <br>
   <img src="https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white" alt="Python 3.10+">
-  <img src="https://img.shields.io/badge/versão-0.0.1.2-blue" alt="Versão 0.0.1.2">
+  <img src="https://img.shields.io/badge/versão-0.0.2.0-blue" alt="Versão 0.0.2.0">
   <img src="https://img.shields.io/badge/status-estável-brightgreen" alt="Status estável">
   <img src="https://img.shields.io/badge/licença-MIT-yellow" alt="Licença MIT">
   <a href="https://github.com/marcus300/petronect-email-extractor/releases/latest"><img src="https://img.shields.io/badge/release-latest-2ea44f" alt="Última release"></a>
@@ -47,8 +47,6 @@
 
 O Petronect Email Extractor automatiza a leitura de notificações no Outlook, filtra mensagens por data, hora e assunto, extrai os dados relevantes e gera uma planilha Excel acompanhada de um log técnico detalhado.
 
-> **Ponto de entrada:** [`main.py`](main.py)
-
 <h3 id="tecnologias">Tecnologias</h3>
 
 - **Python 3.10+**, testado com Python 3.14.2.
@@ -79,6 +77,7 @@ sala/
 
 - Windows 64 bits.
 - Outlook desktop clássico instalado e com perfil configurado.
+    > Outlook Clássico
 - Permissão de acesso às caixas de correio pesquisadas.
 - Python 3.10 ou superior somente para executar pelo código-fonte.
 
@@ -107,22 +106,24 @@ python -m pip install -r requirements.txt
 
 <h3 id="atualizações-pelo-github">Atualizações pelo GitHub</h3>
 
-A aplicação consulta em segundo plano a API pública de `marcus300/petronect-email-extractor/releases/latest`. Se a API falhar, tenta automaticamente o link oficial `releases/latest` por meio da pilha HTTPS do Windows e extrai o número da versão do redirecionamento para a tag publicada. Esse fallback respeita os certificados confiáveis, o proxy e as políticas de segurança configuradas no Windows; a validação SSL nunca é desabilitada.
+A aplicação consulta em segundo plano a API pública de `marcus300/petronect-email-extractor/releases/latest`. Se a API falhar, tenta automaticamente o link oficial `releases/latest` e extrai o número da versão do redirecionamento para a tag publicada. A validação SSL nunca é desabilitada.
 
-Quando uma versão numericamente superior estiver disponível, o usuário poderá abrir sua página de download. A consulta também pode ser iniciada manualmente no About e não exige token ou credenciais. Se os dois métodos falharem, a interface apresenta uma orientação curta e grava os detalhes técnicos em `%LOCALAPPDATA%\PetronectEmailExtractor\logs`.
+Quando uma versão numericamente superior estiver disponível, o botão **Atualizar** baixa diretamente o executável oficial da release, sem abrir o navegador. O arquivo é mantido como parcial até que origem HTTPS, nome, tamanho e estrutura PE do executável sejam validados. No executável distribuído, um processo auxiliar aguarda o encerramento da aplicação, substitui o arquivo e reinicia a versão atualizada. Se qualquer etapa falhar, o executável em uso permanece intacto e os detalhes são registrados no log. A consulta não exige token ou credenciais.
+
+> Atualmente a release não publica um checksum separado. O atualizador calcula e registra o SHA-256 do download, mas a validação de autenticidade baseia-se na API, no repositório oficial, nos hosts HTTPS autorizados, no nome e tamanho do asset e na estrutura do executável.
 
 <h3 id="conexão-microsoft-graph">Conexão Microsoft Graph</h3>
 
-A versão 0.0.1.2 ainda consulta mensagens pelo Outlook clássico via COM. O novo Outlook não disponibiliza essa automação para aplicativos externos. Está planejada uma segunda fonte baseada no Microsoft Graph, que consultará a caixa diretamente no Exchange Online e não dependerá de qual Outlook está aberto nem do cache local.
+A versão 0.0.2.0 ainda consulta mensagens pelo Outlook clássico via COM. O novo Outlook não disponibiliza essa automação para aplicativos externos. Está planejada uma segunda fonte baseada no Microsoft Graph, que consultará a caixa diretamente no Exchange Online e não dependerá de qual Outlook está aberto nem do cache local.
 
 <h2 id="como-usar">Como usar</h2>
 
 Uso recomendado do executável:
 
 1. Abra o **Outlook (clássico)** e aguarde a sincronização da caixa compartilhada. Os e-mails exibidos apenas no novo Outlook ainda não podem ser lidos pela versão atual.
-2. Abra `Petronect Email Extractor v0.0.1.2.exe` fora de qualquer arquivo compactado.
+2. Abra `Petronect Email Extractor v0.0.2.0.exe` fora de qualquer arquivo compactado.
 3. Selecione a caixa de pesquisa e a pasta do Outlook.
-4. Informe a data e a hora inicial digitando os campos ou utilizando o calendário.
+4. Informe a data e a hora inicial digitando os campos ou utilizando o calendário. O corte não pode ser posterior à data e hora atuais.
 5. No assunto, selecione uma opção da lista, digite um texto livre ou deixe o campo vazio.
 6. Confirme o destino sugerido `Downloads\emails_petronect.xlsx` ou use **Escolher** para alterar a pasta e o nome.
 7. Clique em **Pesquisar e gerar Excel** e acompanhe o log.
@@ -130,31 +131,45 @@ Uso recomendado do executável:
 
 As opções de assunto disponíveis são:
 
-- `Sala`
-- `Nova Oportunidade`
-- `Chamado`
+- `0.Conjunto (Sala, Prorrogação, Cancelamento)`
 - `Cancelada`
-- `Prorrogada`
+- `Chamado`
+- `Nova Oportunidade`
 - `Pedido`
+- `Prorrogada`
 - `Relatório`
+- `Sala`
 
 Os termos internos utilizados por cada opção não são exibidos na lista. Opções com mais de um termo aceitam qualquer um deles. Independentemente do assunto escolhido, somente mensagens enviadas por `ordersender-prod@ansmtp.ariba.com` ou `petronect@petronect.com.br` são consideradas.
+
+A opção `0.Conjunto (Sala, Prorrogação, Cancelamento)` executa uma única leitura do Outlook e aceita, durante a própria filtragem, assuntos contendo `sala`, `prorrogada` ou `cancelada`. Cada mensagem é tratada pelo parser individual correspondente ao seu Subject e todas são reunidas diretamente em um único Excel estruturado; não são executadas três pesquisas nem uma mesclagem posterior de arquivos.
 
 Ao abrir a aplicação, o campo **Salvar Excel em** é preenchido automaticamente com `emails_petronect.xlsx` na pasta Downloads do usuário que executou o programa. A pasta é localizada pelas pastas conhecidas do Windows, inclusive quando Downloads estiver redirecionada. O botão **Escolher** continua permitindo alterar livremente o diretório e o nome do arquivo.
 
 <h2 id="funcionalidades">Funcionalidades</h2>
 
 - Seleciona caixas, pastas e subpastas do Outlook.
+- Atualiza automaticamente a árvore de pastas ao abrir a lista, incluindo subpastas sincronizadas depois da inicialização e preservando a pasta selecionada.
 - Permite digitar ou selecionar no calendário a data inicial.
+- Exibe calendário integralmente em PT-BR, com semana iniciando em domingo, cabeçalho dinâmico, botão **Hoje** e destaques diferentes para a data atual e a data selecionada.
 - Permite deixar o assunto vazio, digitar um trecho livre ou selecionar um tipo de notificação na lista suspensa editável.
+- Apresenta caixas de correio, subpastas irmãs e tipos de assunto em ordem alfabética sem diferenciar maiúsculas ou acentos; a hierarquia de pastas permanece preservada.
 - Converte cada opção visível em um ou mais termos internos e aceita a correspondência de qualquer termo configurado.
 - Filtra mensagens por data, hora e, quando informado, por trecho do assunto.
 - Restringe a pesquisa aos remetentes oficiais `ordersender-prod@ansmtp.ariba.com` e `petronect@petronect.com.br`.
 - Extrai IDs no padrão `700` seguido de sete dígitos.
-- Para `Sala`, separa tipo e mensagem das notificações Petronect e exporta o layout específico.
-- Para assunto diferente ou vazio, exporta data, assunto, ID e o `Body` original sem tratamento.
+- Para `Sala`, separa tipo e mensagem das notificações Petronect e exporta o layout estruturado.
+- Para `Prorrogada`, define o tipo como `Prorrogação de Oportunidade`, extrai somente a nova data final após o banner de segurança e reutiliza exatamente o mesmo layout estruturado de `Sala`.
+- Se o banner não existir em uma notificação `Prorrogada`, pesquisa o `Body` completo e registra o fallback no log; valores ausentes ou divergentes também geram avisos sem descartar o e-mail.
+- Para `Cancelada`, define o tipo como `Oportunidade Cancelada` e extrai `foi cancelada pelo seguinte motivo:` seguido do motivo presente no `Body`, priorizando a ocorrência posterior ao banner de segurança.
+- Preserva parágrafos e quebras de linha do motivo de cancelamento, incluindo motivo vazio ou o valor literal `0`, sem corrigir ou inventar conteúdo.
+- `Sala`, `Prorrogada` e `Cancelada` compartilham o mesmo layout estruturado de Excel com as colunas `Tipo` e `Mensagem`.
+- Permite pesquisar `Sala`, `Prorrogada` e `Cancelada` conjuntamente em uma única varredura, mantendo as regras individuais de limpeza e extração de cada categoria.
+- Para assunto diferente de `Sala`, `Prorrogada` e `Cancelada`, ou vazio, exporta data, assunto, ID e o `Body` original sem tratamento.
+- Impede o início da pesquisa quando a data e hora de corte forem posteriores ao momento atual.
 - Sugere automaticamente `Downloads\emails_petronect.xlsx` como destino inicial, sem impedir a escolha de outro local ou nome.
 - Verifica automaticamente a última versão publicada e oferece atualização quando necessário.
+- Baixa e valida automaticamente o executável da atualização pelo GitHub, sem direcionar o usuário ao navegador.
 - Registra ambiente, critérios, contagens e erros detalhados no log.
 - Permite cancelar a execução e abrir o Excel gerado.
 
@@ -175,7 +190,7 @@ As amostras não registram remetente, destinatários, texto do assunto nem conte
 
 <h2 id="última-release">Última release</h2>
 
-A versão atual é **0.0.1.2**. A página abaixo contém o executável para Windows, as notas da versão e os arquivos-fonte correspondentes à tag publicada.
+A versão atual é **0.0.2.0**. A página abaixo contém o executável para Windows, as notas da versão e os arquivos-fonte correspondentes à tag publicada.
 
 <p align="center">
   <a href="https://github.com/Marcus300/petronect-email-extractor/releases/latest"><strong>Acessar a página de download da última release »</strong></a>
@@ -189,7 +204,18 @@ As versões anteriores continuam disponíveis no [histórico completo de release
 - [x] Disponibilizar uma lista suspensa editável com os assuntos padrão das notificações Petronect.
 - [x] Restringir a pesquisa aos remetentes oficiais configurados.
 - [x] Criar um layout genérico com `Body` original para pesquisas diferentes de `Sala`.
-- [ ] Criar layouts tratados específicos para outros modelos de notificação Petronect.
+- [x] Tratar notificações `Prorrogada` com extração determinística da nova data final e layout estruturado.
+- [x] Tratar notificações `Cancelada` preservando o motivo e reutilizando o layout estruturado.
+- [x] Reunir `Sala`, `Prorrogada` e `Cancelada` em um filtro conjunto executado em uma única varredura.
+-  Criar layouts tratados específicos para:
+    - [x] Sala
+    - [x] Prorrogada
+    - [x] Cancelada
+    - [x]  Conjunto
+    - [ ] Pedido
+    - [ ] Chamado
+    - [ ] Nova Oportunidade
+    - [ ] Relatório
 - [ ] Implementar a fonte Microsoft Graph após aprovação e configuração do aplicativo no Microsoft Entra ID.
 
 <h2 id="releases-e-versões-anteriores">Releases e versões anteriores</h2>
@@ -201,8 +227,8 @@ As versões anteriores continuam disponíveis no [histórico completo de release
 Para publicar uma versão, atualize `email_extractor/version.py` e `version_info.txt`, execute os testes e envie uma tag correspondente:
 
 ```powershell
-git tag -a v0.0.1.2 -m "Petronect Email Extractor v0.0.1.2"
-git push origin v0.0.1.2
+git tag -a v0.0.2.0 -m "Petronect Email Extractor v0.0.2.0"
+git push origin v0.0.2.0
 ```
 
 O workflow testa o projeto no Windows, valida a correspondência entre tag e metadados, gera o `.exe` e o anexa à release. Nunca substitua uma tag publicada: cada nova versão deve receber uma nova tag, preservando downloads e notas anteriores.

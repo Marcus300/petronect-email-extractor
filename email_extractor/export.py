@@ -6,7 +6,7 @@ import tempfile
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font
 
-from .models import EmailRecord, uses_room_layout
+from .models import EmailRecord, uses_structured_layout
 
 
 def export_xlsx(
@@ -20,10 +20,10 @@ def export_xlsx(
     workbook = Workbook()
     sheet = workbook.active
     sheet.title = "Emails"
-    room_layout = uses_room_layout(subject_filter)
+    structured_layout = uses_structured_layout(subject_filter)
     headers = (
         ["Data e hora de recebimento", "Assunto", "ID", "Tipo", "Mensagem"]
-        if room_layout
+        if structured_layout
         else ["Data e hora de recebimento", "Assunto", "ID", "Body"]
     )
     sheet.append(headers)
@@ -33,7 +33,7 @@ def export_xlsx(
     for record in records:
         row = (
             [record.received_at, record.subject, record.email_id, record.tipo, record.mensagem]
-            if room_layout
+            if structured_layout
             else [record.received_at, record.subject, record.email_id, record.body]
         )
         sheet.append(row)
@@ -45,12 +45,12 @@ def export_xlsx(
     sheet.column_dimensions["A"].width = 25
     sheet.column_dimensions["B"].width = 45
     sheet.column_dimensions["C"].width = 14
-    sheet.column_dimensions["D"].width = 45 if room_layout else 100
-    if room_layout:
+    sheet.column_dimensions["D"].width = 45 if structured_layout else 100
+    if structured_layout:
         sheet.column_dimensions["E"].width = 90
     for cell in sheet["A"][1:]:
         cell.number_format = "dd/mm/yyyy hh:mm:ss"
-    content_column = "E" if room_layout else "D"
+    content_column = "E" if structured_layout else "D"
     for cell in sheet[content_column][1:]:
         cell.alignment = Alignment(wrap_text=True, vertical="top")
     # Save beside the destination and replace only after a complete workbook is

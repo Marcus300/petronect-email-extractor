@@ -5,6 +5,7 @@ import json
 import re
 import subprocess
 from urllib.request import Request, urlopen
+from urllib.parse import quote
 
 
 UPDATE_CHECK_ENABLED = True
@@ -25,6 +26,9 @@ class UpdateStatus:
     latest_version: str = ""
     release_url: str = ""
     source: str = ""
+    asset_name: str = ""
+    asset_url: str = ""
+    asset_size: int = 0
 
     @property
     def update_available(self) -> bool:
@@ -48,13 +52,36 @@ def _check_via_api(current_version: str, timeout: float) -> UpdateStatus:
     )
     with urlopen(request, timeout=timeout) as response:
         payload = json.load(response)
+    latest_version = str(payload.get("tag_name", "")).removeprefix("v")
+    asset_name, asset_url, asset_size = _select_executable_asset(
+        payload.get("assets", []), latest_version
+    )
     return UpdateStatus(
         True,
         current_version,
-        str(payload.get("tag_name", "")).removeprefix("v"),
+        latest_version,
         str(payload.get("html_url", "")),
         "github_api",
+        asset_name,
+        asset_url,
+        asset_size,
     )
+
+
+def _expected_asset_names(version: str) -> tuple[str, ...]:
+    return (
+        f"Petronect.Email.Extractor.v{version}.exe",
+        f"Petronect Email Extractor v{version}.exe",
+    )
+
+
+def _select_executable_asset(assets, version: str) -> tuple[str, str, int]:
+    expected = set(_expected_asset_names(version))
+    for asset in assets or []:
+        name = str(asset.get("name", ""))
+        if name in expected:
+            return name, str(asset.get("browser_download_url", "")), int(asset.get("size", 0) or 0)
+    return "", "", 0
 
 
 def _latest_release_url_via_windows(timeout: float) -> str:
@@ -105,7 +132,22 @@ def _check_via_release_link(current_version: str, timeout: float) -> UpdateStatu
     match = _TAG_URL_PATTERN.search(release_url)
     if not match:
         raise ValueError(f"URL da release sem versão reconhecida: {release_url!r}")
-    return UpdateStatus(True, current_version, match.group(1), release_url, "github_release_link")
+    version = match.group(1)
+    asset_name = _expected_asset_names(version)[0]
+    asset_url = (
+        f"https://github.com/{GITHUB_REPOSITORY}/releases/download/"
+        f"v{version}/{quote(asset_name)}"
+    )
+    return UpdateStatus(
+        True,
+        current_version,
+        version,
+        release_url,
+        "github_release_link",
+        asset_name,
+        asset_url,
+        0,
+    )
 
 
 def check_for_updates(current_version: str, timeout: float = 5.0) -> UpdateStatus:
