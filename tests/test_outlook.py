@@ -1,5 +1,6 @@
 import unittest
 from datetime import datetime
+from unittest.mock import patch
 
 from email_extractor.outlook import OutlookEmailSource
 
@@ -55,4 +56,59 @@ class OutlookTests(unittest.TestCase):
         self.assertEqual(
             OutlookEmailSource._coerce_datetime(value),
             datetime(2026, 9, 16, 10, 30, 5, 123000),
+        )
+
+    @patch("email_extractor.outlook.locale.getlocale", return_value=("pt_BR", "cp1252"))
+    def test_ambiguous_text_date_uses_day_month_for_brazilian_locale(self, _locale) -> None:
+        self.assertEqual(
+            OutlookEmailSource._coerce_datetime("09/10/2026 10:30:00"),
+            datetime(2026, 10, 9, 10, 30),
+        )
+
+    @patch("email_extractor.outlook.locale.getlocale", return_value=("en_US", "cp1252"))
+    def test_ambiguous_text_date_uses_month_day_for_us_locale(self, _locale) -> None:
+        self.assertEqual(
+            OutlookEmailSource._coerce_datetime("09/10/2026 10:30:00"),
+            datetime(2026, 9, 10, 10, 30),
+        )
+
+    @patch("email_extractor.outlook.locale.getlocale", return_value=("en_US", "cp1252"))
+    def test_unambiguous_text_date_does_not_depend_on_locale(self, _locale) -> None:
+        self.assertEqual(
+            OutlookEmailSource._coerce_datetime("16/09/2026 10:30:00"),
+            datetime(2026, 9, 16, 10, 30),
+        )
+
+    def test_structural_sample_does_not_include_subject_or_body_content(self) -> None:
+        attachments = type("Attachments", (), {"Count": 2})()
+        message = type(
+            "Message",
+            (),
+            {
+                "Subject": "conteúdo confidencial do assunto",
+                "Body": "conteúdo confidencial do corpo",
+                "HTMLBody": "<p>conteúdo confidencial</p>",
+                "MessageClass": "IPM.Note",
+                "Attachments": attachments,
+                "Size": 1234,
+            },
+        )()
+        sample = OutlookEmailSource._structural_sample(
+            message,
+            1,
+            datetime(2026, 9, 16, 10, 30),
+            datetime(2026, 9, 16, 10, 30),
+        )
+        self.assertIn("assunto_caracteres=32", sample)
+        self.assertIn("body_caracteres=30", sample)
+        self.assertIn("anexos=2", sample)
+        self.assertNotIn("confidencial", sample)
+
+    def test_sender_email_reads_standard_smtp_property(self) -> None:
+        message = type(
+            "Message", (), {"SenderEmailAddress": "petronect@petronect.com.br"}
+        )()
+        self.assertEqual(
+            OutlookEmailSource._sender_email(message),
+            "petronect@petronect.com.br",
         )

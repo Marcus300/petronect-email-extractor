@@ -6,26 +6,37 @@ import tempfile
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font
 
-from .models import EmailRecord
+from .models import EmailRecord, uses_room_layout
 
 
 def export_xlsx(
     records: Iterable[EmailRecord],
     output_path: Path,
     on_progress: Callable[[str], None] | None = None,
+    subject_filter: str = "",
 ) -> int:
     """Write extraction results to a readable Excel workbook."""
     output_path.parent.mkdir(parents=True, exist_ok=True)
     workbook = Workbook()
     sheet = workbook.active
     sheet.title = "Emails"
-    headers = ["Data e hora de recebimento", "Assunto", "ID", "Tipo", "Menssagem"]
+    room_layout = uses_room_layout(subject_filter)
+    headers = (
+        ["Data e hora de recebimento", "Assunto", "ID", "Tipo", "Mensagem"]
+        if room_layout
+        else ["Data e hora de recebimento", "Assunto", "ID", "Body"]
+    )
     sheet.append(headers)
     for cell in sheet[1]:
         cell.font = Font(bold=True)
     count = 0
     for record in records:
-        sheet.append([record.received_at, record.subject, record.email_id, record.tipo, record.mensagem])
+        row = (
+            [record.received_at, record.subject, record.email_id, record.tipo, record.mensagem]
+            if room_layout
+            else [record.received_at, record.subject, record.email_id, record.body]
+        )
+        sheet.append(row)
         count += 1
         if on_progress and count % 25 == 0:
             on_progress(f"{count} email(s) encontrado(s); preparando Excel")
@@ -34,11 +45,13 @@ def export_xlsx(
     sheet.column_dimensions["A"].width = 25
     sheet.column_dimensions["B"].width = 45
     sheet.column_dimensions["C"].width = 14
-    sheet.column_dimensions["D"].width = 45
-    sheet.column_dimensions["E"].width = 90
+    sheet.column_dimensions["D"].width = 45 if room_layout else 100
+    if room_layout:
+        sheet.column_dimensions["E"].width = 90
     for cell in sheet["A"][1:]:
         cell.number_format = "dd/mm/yyyy hh:mm:ss"
-    for cell in sheet["E"][1:]:
+    content_column = "E" if room_layout else "D"
+    for cell in sheet[content_column][1:]:
         cell.alignment = Alignment(wrap_text=True, vertical="top")
     # Save beside the destination and replace only after a complete workbook is
     # produced. This avoids leaving a corrupt final file after an interrupted save.

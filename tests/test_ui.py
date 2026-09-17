@@ -2,6 +2,7 @@ import unittest
 from datetime import datetime
 
 from email_extractor.ui import ExtractorWindow
+from email_extractor.models import uses_room_layout
 
 
 class TextVariable:
@@ -28,6 +29,12 @@ class UiTests(unittest.TestCase):
         window.time_hour = TextVariable("01")
         window.time_minute = TextVariable("05")
         self.assertEqual(window._start_datetime(), datetime(2026, 9, 16, 1, 5))
+
+    def test_only_sala_uses_room_layout(self) -> None:
+        self.assertTrue(uses_room_layout("SALA"))
+        self.assertTrue(uses_room_layout(" sala "))
+        self.assertFalse(uses_room_layout(""))
+        self.assertFalse(uses_room_layout("[EXTERNAL] SALA"))
 
 
 if __name__ == "__main__":

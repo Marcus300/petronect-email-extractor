@@ -2,6 +2,38 @@
 
 Este projeto segue tags no formato `vMAJOR.MINOR.PATCH.REVISION`. As versões publicadas permanecem disponíveis no histórico de releases do GitHub.
 
+## [0.0.1.2] — 2026-09-17
+
+### Adicionado
+
+- Fallback seguro que consulta o link oficial `releases/latest` e obtém a versão pelo redirecionamento do GitHub.
+- Uso da pilha HTTPS e dos certificados confiáveis do Windows no fallback de atualização.
+- Log técnico independente em `%LOCALAPPDATA%\PetronectEmailExtractor\logs` quando todas as consultas de atualização falham.
+- Campo de assunto com lista suspensa editável de tipos de notificação.
+- Layout genérico de Excel com a coluna `Body` contendo o corpo original e sem tratamento.
+- Diagnóstico por pasta com intervalo mínimo e máximo de recebimento, quantidade dentro do período, itens não-email, classes MAPI e tipos de data retornados pelo Outlook.
+- Amostras estruturais e anônimas de até três mensagens por pasta, contendo apenas tipos, datas normalizadas, comprimentos, quantidade de anexos e tamanho em bytes.
+- Registro de fuso horário, deslocamento UTC, codificação regional e estratégia de normalização da data.
+- Preenchimento automático do destino com `emails_petronect.xlsx` na pasta Downloads do usuário atual, localizada pela API de pastas conhecidas do Windows.
+- Lista de assuntos com as opções `Sala`, `Nova Oportunidade`, `Chamado`, `Cancelada`, `Prorrogada`, `Pedido` e `Relatório`.
+- Mapeamento interno de cada opção para um ou mais termos de assunto, com correspondência alternativa quando houver vários termos.
+- Restrição da pesquisa aos remetentes `ordersender-prod@ansmtp.ariba.com` e `petronect@petronect.com.br`.
+- Documentação da arquitetura planejada para conexão futura ao Microsoft Graph e dos requisitos de Microsoft Entra ID.
+
+### Alterado
+
+- Falhas da consulta de atualização agora exibem uma orientação curta na interface, mantendo exceções e detalhes técnicos no arquivo de log.
+- A API pública do GitHub permanece como consulta principal; o link direto é usado automaticamente quando a API não pode ser validada ou acessada.
+- O assunto passa a ser opcional e continua aceitando texto livre além dos itens da lista.
+- O tratamento em `Tipo` e `Mensagem` fica restrito ao filtro `Sala`; filtros diferentes ou vazios utilizam o layout genérico.
+- A conversão prioriza componentes numéricos de objetos COM; datas textuais inequívocas são detectadas e datas ambíguas respeitam explicitamente a localidade do Windows.
+- O resumo informa quando nenhum e-mail atingiu a data inicial e esclarece quando o filtro de assunto não chegou a ser aplicado.
+- Logs de datas inválidas deixaram de registrar o texto do assunto e passaram a informar somente seu comprimento.
+- O seletor de destino passa a abrir com a pasta e o nome atualmente informados, mantendo a possibilidade de alterá-los livremente.
+- A opção `SALA` passa a ser exibida como `Sala`; termos usados na pesquisa permanecem ocultos na lista.
+- As duas definições solicitadas para `Chamado` foram consolidadas em uma opção única que pesquisa `Atenção ao Chamado`, `ticket` ou `chamado`.
+- O README passa a priorizar a instalação e o uso do executável e deixa de apresentar uma seção específica de testes.
+
 ## [0.0.1.1] — 2026-09-16
 
 ### Adicionado
@@ -59,3 +91,4 @@ Este projeto segue tags no formato `vMAJOR.MINOR.PATCH.REVISION`. As versões pu
 
 [0.0.1.0]: https://github.com/marcus300/petronect-email-extractor/releases/tag/v0.0.1.0
 [0.0.1.1]: https://github.com/marcus300/petronect-email-extractor/releases/tag/v0.0.1.1
+[0.0.1.2]: https://github.com/marcus300/petronect-email-extractor/releases/tag/v0.0.1.2

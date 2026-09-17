@@ -22,6 +22,7 @@ sala/
 │   ├── export.py               # Geração atômica do Excel
 │   ├── models.py               # Modelos de dados
 │   ├── outlook.py              # Leitura recursiva do Outlook
+│   ├── paths.py                # Pastas do usuário e destino padrão do Excel
 │   ├── petronect.py            # Interpretação das notificações
 │   ├── ui.py                   # Interface gráfica
 │   └── update_checker.py       # Consulta da release mais recente no GitHub

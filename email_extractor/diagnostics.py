@@ -13,8 +13,11 @@ from pathlib import Path
 def runtime_metadata() -> list[str]:
     """Return portable, non-secret runtime information useful for support."""
     executable = Path(sys.executable)
+    local_now = datetime.now().astimezone()
     return [
-        f"timestamp={datetime.now().astimezone().isoformat(timespec='seconds')}",
+        f"timestamp={local_now.isoformat(timespec='seconds')}",
+        f"timezone_name={local_now.tzname()}",
+        f"utc_offset={local_now.strftime('%z')}",
         f"app_frozen={bool(getattr(sys, 'frozen', False))}",
         f"app_executable={executable}",
         f"app_directory={executable.parent}",
@@ -24,6 +27,7 @@ def runtime_metadata() -> list[str]:
         f"machine={platform.machine()}",
         f"architecture={platform.architecture()[0]}",
         f"locale={locale.getlocale()}",
+        f"preferred_encoding={locale.getpreferredencoding(False)}",
         f"filesystem_encoding={sys.getfilesystemencoding()}",
         f"temp_directory={Path(tempfile.gettempdir())}",
     ]
@@ -45,5 +49,21 @@ def emergency_log_path() -> Path:
 def write_emergency_log(exc: BaseException) -> Path:
     path = emergency_log_path()
     lines = ["=== FALHA NA INICIALIZAÇÃO ===", *runtime_metadata(), "", format_exception(exc)]
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return path
+
+
+def write_update_check_log(exc: BaseException) -> Path:
+    """Persist update-check diagnostics without requiring an Excel destination."""
+    base = os.getenv("LOCALAPPDATA") or tempfile.gettempdir()
+    directory = Path(base) / "PetronectEmailExtractor" / "logs"
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / f"update_{datetime.now():%Y%m%d_%H%M%S}.log"
+    lines = [
+        "=== FALHA NA VERIFICAÇÃO DE ATUALIZAÇÃO ===",
+        *runtime_metadata(),
+        "",
+        format_exception(exc),
+    ]
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return path

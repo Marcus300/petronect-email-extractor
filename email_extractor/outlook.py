@@ -1,15 +1,34 @@
 from collections.abc import Callable, Iterable
+from collections import Counter
 from datetime import datetime
+import locale
+import re
 from threading import Event
 
 try:
     from .cleaning import find_email_id
-    from .models import EmailRecord, SearchCriteria
+    from .models import (
+        ALLOWED_SENDERS,
+        EmailRecord,
+        SearchCriteria,
+        sender_is_allowed,
+        subject_matches,
+        subject_terms,
+        uses_room_layout,
+    )
     from .petronect import extrair_tipo_mensagem, normalize_body
 except ImportError:
     # Support direct diagnostics such as `python email_extractor/outlook.py`.
     from cleaning import find_email_id
-    from models import EmailRecord, SearchCriteria
+    from models import (
+        ALLOWED_SENDERS,
+        EmailRecord,
+        SearchCriteria,
+        sender_is_allowed,
+        subject_matches,
+        subject_terms,
+        uses_room_layout,
+    )
     from petronect import extrair_tipo_mensagem, normalize_body
 
 
@@ -85,20 +104,42 @@ class OutlookEmailSource:
         date_errors = 0
         older_items = 0
         different_subject_items = 0
+        allowed_sender_items = 0
+        different_sender_items = 0
+        non_mail_items = 0
+        after_start_items = 0
+        earliest_received = None
+        latest_received = None
+        message_classes: Counter[str] = Counter()
+        received_types: Counter[str] = Counter()
         if on_progress:
             on_progress(f"Itens encontrados na pasta: {total_items}")
+        sorted_by_received = False
         try:
             items.Sort("[ReceivedTime]", True)
+            sorted_by_received = True
         except Exception:
             # Some Outlook folders contain item types without ReceivedTime.
             pass
+        if on_detail:
+            on_detail(
+                f"PASTA_METADADOS caminho={folder.FolderPath!r}; total_itens={total_items}; "
+                f"ordenado_por_received_time={sorted_by_received}; corte={criteria.start_at.isoformat(sep=' ')}; "
+                f"assunto_informado={bool(criteria.subject)}; assunto_caracteres={len(criteria.subject)}; "
+                f"termos_assunto={len(subject_terms(criteria.subject))}; remetentes_permitidos={len(ALLOWED_SENDERS)}"
+            )
         for index in range(1, total_items + 1):
             if stop_event and stop_event.is_set():
                 return
             message = items.Item(index)
             if not self._is_mail_item(message):
+                non_mail_items += 1
                 continue
             mail_items += 1
+            message_class = str(self._safe_property(message, "MessageClass"))
+            message_classes[message_class] += 1
+            raw_received = self._safe_property(message, "ReceivedTime")
+            received_types[self._type_name(raw_received)] += 1
             received_at = self._received_at(message, on_detail, index)
             if received_at is None:
                 date_errors += 1
@@ -106,25 +147,39 @@ class OutlookEmailSource:
                     on_progress("Aviso: não foi possível converter a data de recebimento de um email")
                 continue
             date_items += 1
+            earliest_received = received_at if earliest_received is None else min(earliest_received, received_at)
+            latest_received = received_at if latest_received is None else max(latest_received, received_at)
+            if on_detail and mail_items <= 3:
+                on_detail(self._structural_sample(message, index, raw_received, received_at))
             if received_at < criteria.start_at:
                 older_items += 1
                 continue
-            if criteria.subject.casefold() not in str(getattr(message, "Subject", "")).casefold():
+            after_start_items += 1
+            sender_email = self._sender_email(message)
+            if not sender_is_allowed(sender_email):
+                different_sender_items += 1
+                continue
+            allowed_sender_items += 1
+            if not subject_matches(str(getattr(message, "Subject", "")), criteria.subject):
                 different_subject_items += 1
                 continue
             subject_items += 1
             subject = str(getattr(message, "Subject", ""))
             body = str(getattr(message, "Body", ""))
-            parsed = extrair_tipo_mensagem(body)
-            if on_progress:
-                for warning in parsed.warnings:
-                    on_progress(f"Aviso no tratamento Petronect: {warning}")
+            if uses_room_layout(criteria.subject):
+                parsed = extrair_tipo_mensagem(body)
+                if on_progress:
+                    for warning in parsed.warnings:
+                        on_progress(f"Aviso no tratamento Petronect: {warning}")
+                tipo, mensagem = parsed.tipo, parsed.mensagem
+            else:
+                tipo, mensagem = "", ""
             yield EmailRecord(
                 received_at,
                 find_email_id(normalize_body(body)),
                 subject,
-                parsed.tipo,
-                parsed.mensagem,
+                tipo,
+                mensagem,
                 body,
                 folder.FolderPath,
             )
@@ -132,9 +187,38 @@ class OutlookEmailSource:
         if on_progress:
             on_progress(
                 f"Resumo da pasta: {mail_items} emails, {date_items} com data válida, "
-                f"{subject_items} correspondentes ao assunto, {date_errors} datas inválidas, "
+                f"{after_start_items} no período, {subject_items} correspondentes ao assunto, "
+                f"{date_errors} datas inválidas, "
                 f"{older_items} anteriores à data inicial, "
-                f"{different_subject_items} fora do filtro de assunto"
+                f"{allowed_sender_items} dos remetentes permitidos, "
+                f"{different_sender_items} fora do filtro de remetente, "
+                f"{different_subject_items} fora do filtro de assunto, {non_mail_items} itens não-email"
+            )
+            if earliest_received is not None and latest_received is not None:
+                on_progress(
+                    "Intervalo de recebimento encontrado: "
+                    f"{earliest_received.isoformat(sep=' ')} até {latest_received.isoformat(sep=' ')}"
+                )
+            if date_items and after_start_items == 0:
+                on_progress(
+                    "Diagnóstico: nenhum email atingiu a data inicial; "
+                    f"o mais recente é {latest_received.isoformat(sep=' ') if latest_received else 'indisponível'} "
+                    f"e o corte é {criteria.start_at.isoformat(sep=' ')}. "
+                    "O filtro de assunto não foi aplicado a esses itens."
+                )
+            elif after_start_items and allowed_sender_items == 0:
+                on_progress(
+                    "Diagnóstico: existem emails no período, mas nenhum pertence aos "
+                    "remetentes permitidos; o filtro de assunto não foi aplicado a esses itens."
+                )
+        if on_detail:
+            on_detail(
+                f"PASTA_ESTATISTICAS caminho={folder.FolderPath!r}; "
+                f"intervalo_inicio={earliest_received.isoformat(sep=' ') if earliest_received else None}; "
+                f"intervalo_fim={latest_received.isoformat(sep=' ') if latest_received else None}; "
+                f"no_periodo={after_start_items}; remetentes_permitidos={allowed_sender_items}; "
+                f"remetentes_rejeitados={different_sender_items}; classes={dict(message_classes)!r}; "
+                f"tipos_received_time={dict(received_types)!r}"
             )
 
         for index in range(1, folder.Folders.Count + 1):
@@ -198,7 +282,7 @@ class OutlookEmailSource:
             message_class = OutlookEmailSource._safe_property(message, "MessageClass")
             on_detail(
                 f"DATA_INVALIDA indice={index}; MessageClass={message_class!r}; "
-                f"Subject={subject!r}; motivo={received_error}"
+                f"assunto_caracteres={OutlookEmailSource._safe_text_length(subject)}; motivo={received_error}"
             )
         return None
 
@@ -220,6 +304,68 @@ class OutlookEmailSource:
             return f"<erro {type(exc).__name__}: {exc}>"
 
     @staticmethod
+    def _safe_text_length(value) -> int | str:
+        try:
+            return len(str(value or ""))
+        except Exception as exc:
+            return f"erro:{type(exc).__name__}"
+
+    @staticmethod
+    def _type_name(value) -> str:
+        return f"{type(value).__module__}.{type(value).__name__}"
+
+    @staticmethod
+    def _safe_attachment_count(message) -> int | str:
+        try:
+            return int(message.Attachments.Count)
+        except Exception as exc:
+            return f"erro:{type(exc).__name__}"
+
+    @staticmethod
+    def _sender_email(message) -> str:
+        """Return an SMTP address without logging or exposing it in diagnostics."""
+        try:
+            address = str(getattr(message, "SenderEmailAddress", "") or "").strip()
+        except Exception:
+            address = ""
+        if address and not address.startswith("/"):
+            return address
+        try:
+            return str(
+                message.PropertyAccessor.GetProperty(
+                    "http://schemas.microsoft.com/mapi/proptag/0x39FE001E"
+                )
+                or ""
+            ).strip()
+        except Exception:
+            return ""
+
+    @staticmethod
+    def _structural_sample(message, index: int, raw_received, received_at: datetime) -> str:
+        """Describe an email's structure without logging addresses, subject or body content."""
+        subject = OutlookEmailSource._safe_property(message, "Subject")
+        body = OutlookEmailSource._safe_property(message, "Body")
+        html_body = OutlookEmailSource._safe_property(message, "HTMLBody")
+        size = OutlookEmailSource._safe_property(message, "Size")
+        message_class = OutlookEmailSource._safe_property(message, "MessageClass")
+        raw_timezone = getattr(raw_received, "tzinfo", None)
+        try:
+            raw_offset = raw_received.utcoffset() if raw_timezone is not None else None
+        except Exception as exc:
+            raw_offset = f"erro:{type(exc).__name__}"
+        return (
+            f"EMAIL_AMOSTRA indice={index}; objeto_tipo={OutlookEmailSource._type_name(message)}; "
+            f"message_class={message_class!r}; received_tipo={OutlookEmailSource._type_name(raw_received)}; "
+            f"received_normalizado={received_at.isoformat(sep=' ')}; "
+            f"received_tem_timezone={raw_timezone is not None}; received_utc_offset={raw_offset}; "
+            f"assunto_caracteres="
+            f"{OutlookEmailSource._safe_text_length(subject)}; body_caracteres="
+            f"{OutlookEmailSource._safe_text_length(body)}; html_body_caracteres="
+            f"{OutlookEmailSource._safe_text_length(html_body)}; anexos="
+            f"{OutlookEmailSource._safe_attachment_count(message)}; tamanho_bytes={size!r}"
+        )
+
+    @staticmethod
     def _coerce_datetime(value) -> datetime | None:
         if value is None:
             return None
@@ -233,12 +379,27 @@ class OutlookEmailSource:
             except (TypeError, ValueError):
                 pass
         if isinstance(value, str):
-            for format_string in (
-                "%m/%d/%Y %H:%M:%S", "%d/%m/%Y %H:%M:%S",
-                "%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S",
-            ):
+            for format_string in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S"):
                 try:
                     return datetime.strptime(value, format_string)
                 except ValueError:
                     continue
+            match = re.fullmatch(
+                r"\s*(\d{1,2})/(\d{1,2})/(\d{4})[ T](\d{1,2}):(\d{2}):(\d{2})\s*",
+                value,
+            )
+            if match:
+                first, second, year, hour, minute, second_value = map(int, match.groups())
+                if first > 12:
+                    day, month = first, second
+                elif second > 12:
+                    month, day = first, second
+                else:
+                    locale_name = (locale.getlocale()[0] or "").replace("-", "_").casefold()
+                    month_first = locale_name.startswith("en_us")
+                    month, day = (first, second) if month_first else (second, first)
+                try:
+                    return datetime(year, month, day, hour, minute, second_value)
+                except ValueError:
+                    return None
         return None

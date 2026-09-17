@@ -9,10 +9,11 @@ from tkinter import filedialog, messagebox, ttk
 from tkinter.scrolledtext import ScrolledText
 import webbrowser
 
-from .diagnostics import format_exception, runtime_metadata
+from .diagnostics import format_exception, runtime_metadata, write_update_check_log
 from .export import export_xlsx
-from .models import SearchCriteria
+from .models import SUBJECT_OPTIONS, SearchCriteria
 from .outlook import OutlookEmailSource, OutlookUnavailableError
+from .paths import default_excel_path
 from .update_checker import UpdateStatus, check_for_updates
 from .version import __version__
 
@@ -38,7 +39,7 @@ class ExtractorWindow:
         self.time_hour = tk.StringVar(value=now.strftime("%H"))
         self.time_minute = tk.StringVar(value=now.strftime("%M"))
         self.subject = tk.StringVar()
-        self.output_path = tk.StringVar()
+        self.output_path = tk.StringVar(value=str(default_excel_path()))
         self.progress_queue: Queue[tuple[str, object]] = Queue()
         self.stop_event = Event()
         self.worker: Thread | None = None
@@ -101,7 +102,13 @@ class ExtractorWindow:
         self._add_segment(time_frame, self.time_minute, 2, 59)
 
         ttk.Label(frame, text="Assunto contém").grid(row=4, column=0, sticky="w", pady=6)
-        ttk.Entry(frame, textvariable=self.subject).grid(row=4, column=1, sticky="ew", pady=6)
+        self.subject_combo = ttk.Combobox(
+            frame,
+            textvariable=self.subject,
+            values=SUBJECT_OPTIONS,
+            state="normal",
+        )
+        self.subject_combo.grid(row=4, column=1, sticky="ew", pady=6)
         ttk.Label(frame, text="Salvar Excel em").grid(row=5, column=0, sticky="w", pady=6)
         ttk.Entry(frame, textvariable=self.output_path).grid(row=5, column=1, sticky="ew", pady=6)
         ttk.Button(frame, text="Escolher", command=self._choose_output).grid(row=5, column=2, padx=(8, 0))
@@ -339,7 +346,11 @@ class ExtractorWindow:
             status = check_for_updates(PROJECT_VERSION)
             self.progress_queue.put(("update_status", status))
         except Exception as exc:
-            self.progress_queue.put(("update_error", f"{type(exc).__name__}: {exc}"))
+            try:
+                diagnostic_path = write_update_check_log(exc)
+            except OSError:
+                diagnostic_path = None
+            self.progress_queue.put(("update_error", diagnostic_path))
 
     def _set_icon_for(self, window) -> None:
         icon_path = self._resource_path("logo.ico")
@@ -394,8 +405,13 @@ class ExtractorWindow:
         self.folder_path.set(self._folder_options.get(self.folder_combo.get(), ""))
 
     def _choose_output(self) -> None:
+        current_output = Path(self.output_path.get().strip() or default_excel_path())
         selected = filedialog.asksaveasfilename(
-            parent=self.root, defaultextension=".xlsx", filetypes=[("Excel", "*.xlsx")]
+            parent=self.root,
+            defaultextension=".xlsx",
+            filetypes=[("Excel", "*.xlsx")],
+            initialdir=str(current_output.parent),
+            initialfile=current_output.name,
         )
         if selected:
             self.output_path.set(selected)
@@ -403,8 +419,8 @@ class ExtractorWindow:
     def _run(self) -> None:
         try:
             output_text = self.output_path.get().strip()
-            if not all([self.mailbox.get().strip(), self.folder_path.get().strip(), self.subject.get().strip(), output_text]):
-                raise ValueError("Selecione uma pasta e preencha data, assunto e destino do Excel.")
+            if not all([self.mailbox.get().strip(), self.folder_path.get().strip(), output_text]):
+                raise ValueError("Selecione uma pasta e preencha data e destino do Excel.")
             criteria = SearchCriteria(self.mailbox.get().strip(), self.folder_path.get().strip(), self._start_datetime(), self.subject.get().strip(), Path(output_text))
         except ValueError as exc:
             messagebox.showerror("Dados inválidos", str(exc), parent=self.root)
@@ -441,7 +457,12 @@ class ExtractorWindow:
                 self._queue_detail,
                 self.stop_event,
             )
-            count = export_xlsx(records, criteria.output_path, self._queue_progress)
+            count = export_xlsx(
+                records,
+                criteria.output_path,
+                self._queue_progress,
+                criteria.subject,
+            )
             self.progress_queue.put(("cancelled" if self.stop_event.is_set() else "finished", count))
         except Exception as exc:
             self.progress_queue.put(("error", format_exception(exc)))
@@ -494,7 +515,13 @@ class ExtractorWindow:
                     self.update_check_in_progress = False
                     self.update_status = None
                     self._refresh_update_controls()
-                    self._write_log(f"Não foi possível verificar atualizações: {value}")
+                    message = (
+                        "Não foi possível consultar atualizações. Verifique a conexão, "
+                        "o proxy ou os certificados do Windows."
+                    )
+                    if value:
+                        message += f" Detalhes: {value}"
+                    self._write_log(message)
         except Empty:
             pass
         self.root.after(100, self._process_progress)
@@ -519,6 +546,8 @@ class ExtractorWindow:
             self._write_detail(item)
         self._write_detail(f"caixa={self.mailbox.get().strip()}")
         self._write_detail(f"pasta={self.folder_path.get().strip()}")
+        self._write_detail("formato_data_interface=DD/MM/AAAA HH:MM")
+        self._write_detail("normalizacao_data=componentes_numericos_ano_mes_dia")
         self._write_detail(f"data_inicial={self._start_datetime().isoformat(sep=' ')}")
         self._write_detail(f"arquivo_saida={output_path.resolve()}")
         self._write_detail(f"assunto_filtro={self.subject.get().strip()!r}")
