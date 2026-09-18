@@ -150,6 +150,7 @@ Ao abrir a aplicação, o campo **Salvar Excel em** é preenchido automaticament
 
 - Exibe uma tela de carregamento responsiva na própria janela durante a conexão inicial com o Outlook, com logo, anel circular animado, progresso real por etapas e mensagens em PT-BR.
 - Carrega caixas e pastas iniciais fora da thread gráfica, mantendo a janela desenhada e responsiva; falhas são registradas em `%LOCALAPPDATA%\PetronectEmailExtractor\logs` e liberam a interface em estado estável.
+- Reinicia atualizações como uma instância independente do PyInstaller, impedindo que o novo executável tente reutilizar a pasta temporária `_MEI` da versão encerrada.
 - Seleciona caixas, pastas e subpastas do Outlook.
 - Atualiza automaticamente a árvore de pastas ao abrir a lista, incluindo subpastas sincronizadas depois da inicialização e preservando a pasta selecionada.
 - Permite digitar ou selecionar no calendário a data inicial.

@@ -18,7 +18,8 @@ Este projeto segue tags no formato `vMAJOR.MINOR.PATCH.REVISION`. As versões pu
 
 ### Alterado
 
-- A carga inicial de caixas e pastas do Outlook deixa de bloquear o construtor e passa a ocorrer em uma thread daemon iniciada por `after_idle`, com toda atualização Tkinter processada na thread principal por `Queue`.
+- O reinício após atualização agora define `PYINSTALLER_RESET_ENVIRONMENT=1` antes de abrir o novo executável e repete a substituição enquanto o arquivo anterior estiver temporariamente bloqueado, evitando falhas ao carregar `python314.dll` de uma pasta `_MEI` já removida.
+- A carga inicial de caixas e pastas do Outlook deixa de bloquear o construtor e passa a ocorrer em uma thread daemon agendada pelo Tkinter após a primeira renderização, com toda atualização gráfica processada na thread principal por `Queue`.
 - Uma única fonte Outlook é reutilizada no worker inicial; COM é inicializado e finalizado dentro dessa mesma thread, sem transportar objetos COM para a interface.
 - A geração de Excel passa a ser importada somente quando uma extração é iniciada, reduzindo trabalho anterior à primeira renderização.
 - O calendário passa a manter uma única instância por janela principal; cliques repetidos restauram, trazem para frente e focalizam o popup existente, e o fechamento pelo botão ou pelo `X` limpa sua referência com segurança.

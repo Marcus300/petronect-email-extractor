@@ -5,7 +5,12 @@ from pathlib import Path
 from unittest.mock import patch
 
 from email_extractor.update_checker import UpdateStatus
-from email_extractor.updater import UpdateDownloadError, download_update
+from email_extractor.updater import (
+    DownloadedUpdate,
+    UpdateDownloadError,
+    download_update,
+    schedule_executable_replacement,
+)
 
 
 class ResponseStub(io.BytesIO):
@@ -41,6 +46,28 @@ def executable_content() -> bytes:
 
 
 class UpdaterTests(unittest.TestCase):
+    @patch("email_extractor.updater.subprocess.Popen")
+    def test_restart_resets_pyinstaller_environment_and_retries_locked_executable(self, popen) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            current = base / "Petronect Email Extractor v0.0.2.1.exe"
+            downloaded_path = base / "download" / current.name
+            downloaded_path.parent.mkdir()
+            current.write_bytes(executable_content())
+            downloaded_path.write_bytes(executable_content())
+            downloaded = DownloadedUpdate(downloaded_path, "0.0.2.1", "hash", 256)
+
+            script_path = schedule_executable_replacement(downloaded, current)
+            script = script_path.read_text(encoding="utf-8-sig")
+
+            self.assertIn("$env:PYINSTALLER_RESET_ENVIRONMENT = '1'", script)
+            self.assertIn("for ($attempt = 0; $attempt -lt 60; $attempt++)", script)
+            self.assertLess(
+                script.index("$env:PYINSTALLER_RESET_ENVIRONMENT = '1'"),
+                script.index("Start-Process -FilePath $target"),
+            )
+            popen.assert_called_once()
+
     @patch("email_extractor.updater.urlopen")
     def test_download_is_validated_and_atomically_exposed(self, urlopen) -> None:
         content = executable_content()

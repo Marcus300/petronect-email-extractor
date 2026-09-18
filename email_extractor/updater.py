@@ -211,8 +211,23 @@ for ($attempt = 0; $attempt -lt 60; $attempt++) {{
 if (Get-Process -Id $processId -ErrorAction SilentlyContinue) {{ exit 2 }}
 try {{
     if (Test-Path -LiteralPath $backup) {{ Remove-Item -LiteralPath $backup -Force }}
-    Move-Item -LiteralPath $target -Destination $backup
+    $replaced = $false
+    for ($attempt = 0; $attempt -lt 60; $attempt++) {{
+        try {{
+            Move-Item -LiteralPath $target -Destination $backup
+            $replaced = $true
+            break
+        }} catch {{
+            Start-Sleep -Milliseconds 500
+        }}
+    }}
+    if (-not $replaced) {{ throw 'O executável atual permaneceu bloqueado após o encerramento.' }}
     Move-Item -LiteralPath $download -Destination $target
+    # PyInstaller 6.9+ assumes that a new invocation inherited from a frozen
+    # process is a worker allowed to reuse the old _MEI directory. An updater
+    # restart must instead unpack an independent runtime before the old _MEI
+    # directory is removed.
+    $env:PYINSTALLER_RESET_ENVIRONMENT = '1'
     Start-Process -FilePath $target
     Remove-Item -LiteralPath $backup -Force
 }} catch {{
