@@ -4,6 +4,7 @@ import sys
 from pathlib import Path
 from queue import Empty, Queue
 from threading import Event, Thread
+from time import monotonic
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 from tkinter.scrolledtext import ScrolledText
@@ -26,13 +27,16 @@ from .version import __version__
 
 
 DATE_FORMAT = "%d/%m/%Y %H:%M"
+FOLDER_CACHE_TTL_SECONDS = 15 * 60
+FOLDER_CACHE_POLL_MILLISECONDS = 60 * 1000
 PROJECT_VERSION = __version__
 PROJECT_GITHUB_URL = "https://github.com/marcus300"
 CURRENT_CHANGELOG_SUMMARY = (
-    "• Microsoft Graph lista as pastas visíveis da raiz e até dois níveis de subpastas.\n"
-    "• Pastas criadas no Outlook Online fora da Inbox passam a aparecer.\n"
+    "• Pastas são mantidas em cache por fonte e caixa durante 15 minutos.\n"
+    "• O dropdown abre sem repetir consultas síncronas ao Microsoft Graph ou Outlook.\n"
+    "• Caches antigos são renovados silenciosamente em segundo plano.\n"
     "• Outlook clássico reativado, com alternância manual e fallback automático.\n"
-    "• Caixas compartilhadas e pastas exibidas com nomes amigáveis."
+    "• Atualização manual permanece disponível quando necessária."
 )
 
 
@@ -85,8 +89,11 @@ class ExtractorWindow:
         self.startup_start_id = None
         self.startup_poll_id = None
         self.startup_slow_id = None
+        self.folder_cache_poll_id = None
         self.closing = False
         self._folder_options: dict[str, str] = {}
+        self._folder_cache: dict[tuple[str, str], tuple[float, list[tuple[int, str, str]]]] = {}
+        self._folder_loads_in_progress: set[tuple[str, str]] = set()
         self.source_switch_in_progress = False
         self.startup_logger.write("Processo Python iniciado")
         self.startup_logger.write("Janela criada")
@@ -140,8 +147,14 @@ class ExtractorWindow:
             state="readonly",
             postcommand=self._refresh_inbox_folders,
         )
-        self.folder_combo.grid(row=2, column=1, columnspan=2, sticky="ew", pady=6)
+        self.folder_combo.grid(row=2, column=1, sticky="ew", pady=6)
         self.folder_combo.bind("<<ComboboxSelected>>", self._folder_selected)
+        self.refresh_folders_button = ttk.Button(
+            frame,
+            text="Atualizar pastas",
+            command=self._force_refresh_inbox_folders,
+        )
+        self.refresh_folders_button.grid(row=2, column=2, sticky="ew", padx=(8, 0), pady=6)
         ttk.Label(frame, text="Data inicial").grid(row=3, column=0, sticky="w", pady=6)
         date_frame = ttk.Frame(frame)
         date_frame.grid(row=3, column=1, sticky="w", pady=6)
@@ -428,6 +441,7 @@ class ExtractorWindow:
         self.mailbox_combo["values"] = mailboxes
         if mailboxes:
             self.mailbox.set(mailboxes[0])
+            self._store_folder_cache(self.source_mode, mailboxes[0], folders)
         self._apply_folder_data(folders)
         self.startup_logger.write("Dados aplicados na interface")
 
@@ -468,6 +482,7 @@ class ExtractorWindow:
         self.mailbox_combo.focus_set()
         self.startup_logger.write("Interface pronta; tempo total registrado neste marcador")
         self.root.after(1500, self._start_update_check)
+        self._schedule_folder_cache_poll()
 
     def _show_startup_warning(self) -> None:
         if not self.closing:
@@ -704,6 +719,7 @@ class ExtractorWindow:
             getattr(self, "startup_start_id", None),
             getattr(self, "startup_poll_id", None),
             getattr(self, "startup_slow_id", None),
+            getattr(self, "folder_cache_poll_id", None),
         ):
             if callback_id is not None:
                 try:
@@ -991,24 +1007,153 @@ class ExtractorWindow:
         self._load_inbox_folders()
 
     def _refresh_inbox_folders(self) -> None:
-        """Reload folders immediately before opening the drop-down."""
+        """Show cached folders immediately and silently refresh stale data."""
         self._load_inbox_folders(preserve_selection=True)
 
-    def _load_inbox_folders(self, preserve_selection: bool = False) -> None:
+    def _force_refresh_inbox_folders(self) -> None:
+        self._load_inbox_folders(preserve_selection=True, force=True)
+
+    @staticmethod
+    def _folder_cache_key(mode: str, mailbox: str) -> tuple[str, str]:
+        return mode, mailbox.strip()
+
+    def _store_folder_cache(self, mode: str, mailbox: str, folders) -> None:
+        key = self._folder_cache_key(mode, mailbox)
+        self._folder_cache[key] = (monotonic(), list(folders))
+
+    def _load_inbox_folders(
+        self,
+        preserve_selection: bool = False,
+        force: bool = False,
+    ) -> None:
+        mailbox = self.mailbox.get().strip()
+        if not mailbox:
+            return
         selected_path = self.folder_path.get().strip() if preserve_selection else ""
+        key = self._folder_cache_key(self.source_mode, mailbox)
+        cached = self._folder_cache.get(key)
+        if cached and not force:
+            loaded_at, folders = cached
+            self._apply_folder_data(folders, selected_path)
+            if monotonic() - loaded_at >= FOLDER_CACHE_TTL_SECONDS:
+                self._start_folder_load(
+                    self.source_mode,
+                    mailbox,
+                    selected_path=selected_path,
+                    silent=True,
+                )
+            return
+        if not cached:
+            self.folder_combo["values"] = []
+            self._folder_options = {}
+            self.folder_display.set("Carregando pastas...")
+            self.folder_path.set("")
+        self._start_folder_load(
+            self.source_mode,
+            mailbox,
+            selected_path=selected_path,
+            silent=bool(cached),
+        )
+
+    def _start_folder_load(
+        self,
+        mode: str,
+        mailbox: str,
+        *,
+        selected_path: str = "",
+        silent: bool = False,
+    ) -> None:
+        key = self._folder_cache_key(mode, mailbox)
+        if key in self._folder_loads_in_progress:
+            return
+        self._folder_loads_in_progress.add(key)
+        if mode == self.source_mode and mailbox == self.mailbox.get().strip():
+            self.refresh_folders_button.configure(state="disabled")
+        Thread(
+            target=self._folder_load_worker,
+            args=(mode, mailbox, selected_path, silent),
+            daemon=True,
+        ).start()
+
+    def _folder_load_worker(
+        self,
+        mode: str,
+        mailbox: str,
+        selected_path: str,
+        silent: bool,
+    ) -> None:
         source = None
         try:
-            source = self._create_source(self.source_mode)
-            folders = source.list_inbox_folders(self.mailbox.get(), max_depth=2)
+            source = self._create_source(mode)
+            folders = source.list_inbox_folders(mailbox, max_depth=2)
         except Exception as exc:
-            self.folder_combo["values"] = []
-            self.folder_display.set("")
-            self.folder_path.set("")
-            self._write_log(str(exc))
+            self._startup_event(
+                "folder_load_error",
+                (mode, mailbox, silent, format_exception(exc)),
+            )
             return
         finally:
             self._close_source(source)
-        self._apply_folder_data(folders, selected_path)
+        self._startup_event(
+            "folder_load_result",
+            (mode, mailbox, list(folders), selected_path),
+        )
+
+    def _complete_folder_load(self, mode, mailbox, folders, selected_path) -> None:
+        key = self._folder_cache_key(mode, mailbox)
+        self._folder_loads_in_progress.discard(key)
+        self._store_folder_cache(mode, mailbox, folders)
+        if mode == self.source_mode and mailbox == self.mailbox.get().strip():
+            self._apply_folder_data(folders, selected_path)
+            self.refresh_folders_button.configure(state="normal")
+
+    def _fail_folder_load(self, mode, mailbox, silent, details) -> None:
+        key = self._folder_cache_key(mode, mailbox)
+        self._folder_loads_in_progress.discard(key)
+        self.startup_logger.write(
+            f"Falha ao atualizar cache de pastas: fonte={mode}; caixa={mailbox}; {details}"
+        )
+        if mode == self.source_mode and mailbox == self.mailbox.get().strip():
+            self.refresh_folders_button.configure(state="normal")
+            if key not in self._folder_cache:
+                self.folder_display.set("")
+                self.folder_path.set("")
+            if not silent:
+                self._write_log("Não foi possível atualizar as pastas. Consulte o log técnico.")
+
+    def _schedule_folder_cache_poll(self) -> None:
+        if self.closing:
+            return
+        self.folder_cache_poll_id = self.root.after(
+            FOLDER_CACHE_POLL_MILLISECONDS,
+            self._refresh_stale_folder_cache,
+        )
+
+    def _refresh_stale_folder_cache(self) -> None:
+        self.folder_cache_poll_id = None
+        if self.closing:
+            return
+        now = monotonic()
+        for (mode, mailbox), (loaded_at, _folders) in self._folder_cache.items():
+            key = self._folder_cache_key(mode, mailbox)
+            if (
+                mode == self.source_mode
+                and now - loaded_at >= FOLDER_CACHE_TTL_SECONDS
+                and key not in self._folder_loads_in_progress
+            ):
+                selected_path = (
+                    self.folder_path.get().strip()
+                    if mailbox == self.mailbox.get().strip()
+                    else ""
+                )
+                self._start_folder_load(
+                    mode,
+                    mailbox,
+                    selected_path=selected_path,
+                    silent=True,
+                )
+                break
+        self._schedule_folder_cache_poll()
 
     def _folder_selected(self, _event=None) -> None:
         self.folder_path.set(self._folder_options.get(self.folder_display.get(), ""))
@@ -1126,6 +1271,12 @@ class ExtractorWindow:
                 elif event == "source_switch_error":
                     mode, details = value
                     self._fail_source_switch(mode, details)
+                elif event == "folder_load_result":
+                    mode, mailbox, folders, selected_path = value
+                    self._complete_folder_load(mode, mailbox, folders, selected_path)
+                elif event == "folder_load_error":
+                    mode, mailbox, silent, details = value
+                    self._fail_folder_load(mode, mailbox, silent, details)
                 elif event == "graph_auth":
                     self._show_graph_authentication(value)
         except Empty:

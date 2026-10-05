@@ -3,7 +3,11 @@ from datetime import datetime
 import tkinter as tk
 from unittest.mock import Mock, patch
 
-from email_extractor.ui import CURRENT_CHANGELOG_SUMMARY, ExtractorWindow
+from email_extractor.ui import (
+    CURRENT_CHANGELOG_SUMMARY,
+    FOLDER_CACHE_TTL_SECONDS,
+    ExtractorWindow,
+)
 from email_extractor.models import uses_room_layout
 
 
@@ -173,8 +177,7 @@ class UiTests(unittest.TestCase):
         self.assertFalse(uses_room_layout(""))
         self.assertFalse(uses_room_layout("[EXTERNAL] SALA"))
 
-    @patch("email_extractor.source_factory.create_email_source")
-    def test_folder_dropdown_refreshes_subfolders_and_preserves_selection(self, create_source) -> None:
+    def test_folder_dropdown_uses_cache_without_network_and_preserves_selection(self) -> None:
         window = object.__new__(ExtractorWindow)
         window.mailbox = TextVariable("petronect, notificacoes")
         window.folder_path = TextVariable(r"\\petronect, notificacoes\Inbox")
@@ -182,13 +185,15 @@ class UiTests(unittest.TestCase):
         window.folder_combo = ComboStub()
         window._folder_options = {}
         window.source_mode = "graph"
-        window._write_log = lambda _message: None
-        create_source.return_value.list_inbox_folders.return_value = [
+        window._start_folder_load = Mock()
+        folders = [
             (0, "Inbox", r"\\petronect, notificacoes\Inbox"),
             (1, "Arquivo", r"\\petronect, notificacoes\Inbox\Arquivo"),
         ]
+        window._folder_cache = {("graph", "petronect, notificacoes"): (100.0, folders)}
 
-        window._refresh_inbox_folders()
+        with patch("email_extractor.ui.monotonic", return_value=101.0):
+            window._refresh_inbox_folders()
 
         self.assertEqual(window.folder_path.get(), r"\\petronect, notificacoes\Inbox")
         self.assertEqual(window.folder_display.get(), "Inbox")
@@ -196,6 +201,34 @@ class UiTests(unittest.TestCase):
         self.assertEqual(
             window._folder_options["    Arquivo"],
             r"\\petronect, notificacoes\Inbox\Arquivo",
+        )
+        window._start_folder_load.assert_not_called()
+
+    def test_stale_folder_cache_is_shown_then_refreshed_silently(self) -> None:
+        window = object.__new__(ExtractorWindow)
+        window.mailbox = TextVariable("Conta")
+        window.folder_path = TextVariable("graph://me/inbox")
+        window.folder_display = TextVariable("Inbox")
+        window.folder_combo = ComboStub()
+        window._folder_options = {}
+        window.source_mode = "graph"
+        window._folder_cache = {
+            ("graph", "Conta"): (100.0, [(0, "Inbox", "graph://me/inbox")])
+        }
+        window._start_folder_load = Mock()
+
+        with patch(
+            "email_extractor.ui.monotonic",
+            return_value=100.0 + FOLDER_CACHE_TTL_SECONDS,
+        ):
+            window._refresh_inbox_folders()
+
+        self.assertEqual(window.folder_display.get(), "Inbox")
+        window._start_folder_load.assert_called_once_with(
+            "graph",
+            "Conta",
+            selected_path="graph://me/inbox",
+            silent=True,
         )
 
     def test_folder_selection_keeps_graph_identifier_hidden(self) -> None:
