@@ -29,10 +29,10 @@ DATE_FORMAT = "%d/%m/%Y %H:%M"
 PROJECT_VERSION = __version__
 PROJECT_GITHUB_URL = "https://github.com/marcus300"
 CURRENT_CHANGELOG_SUMMARY = (
-    "• Microsoft Graph com autenticação corporativa pelo Entra ID.\n"
+    "• Microsoft Graph lista as pastas visíveis da raiz e até dois níveis de subpastas.\n"
+    "• Pastas criadas no Outlook Online fora da Inbox passam a aparecer.\n"
     "• Outlook clássico reativado, com alternância manual e fallback automático.\n"
-    "• Caixas compartilhadas e pastas exibidas com nomes amigáveis.\n"
-    "• Interface reorganizada e diagnóstico de conexão aprimorado."
+    "• Caixas compartilhadas e pastas exibidas com nomes amigáveis."
 )
 
 

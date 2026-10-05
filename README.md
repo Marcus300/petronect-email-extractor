@@ -11,7 +11,7 @@
 <div align="center">
   <br>
   <img src="https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white" alt="Python 3.10+">
-  <img src="https://img.shields.io/badge/versão-0.0.3.0-blue" alt="Versão 0.0.3.0">
+  <img src="https://img.shields.io/badge/versão-0.0.3.1-blue" alt="Versão 0.0.3.1">
   <img src="https://img.shields.io/badge/status-em%20validação-orange" alt="Status em validação">
   <img src="https://img.shields.io/badge/licença-MIT-yellow" alt="Licença MIT">
   <a href="https://github.com/marcus300/petronect-email-extractor/releases/latest"><img src="https://img.shields.io/badge/release-latest-2ea44f" alt="Última release"></a>
@@ -113,14 +113,14 @@ Quando uma versão numericamente superior estiver disponível, o botão **Atuali
 
 <h3 id="conexão-microsoft-graph">Conexão Microsoft Graph</h3>
 
-A versão `0.0.3.0` oferece as fontes Microsoft Graph e Outlook clássico. Na abertura, a aplicação tenta o Graph primeiro e recorre automaticamente ao Outlook clássico se a conexão Graph falhar. O usuário também pode alternar manualmente entre as fontes pelo indicador ao lado da caixa de pesquisa.
+A versão `0.0.3.1` oferece as fontes Microsoft Graph e Outlook clássico. Na abertura, a aplicação tenta o Graph primeiro e recorre automaticamente ao Outlook clássico se a conexão Graph falhar. O usuário também pode alternar manualmente entre as fontes pelo indicador ao lado da caixa de pesquisa.
 
 Antes do primeiro teste, um administrador ou responsável pelo tenant deve:
 
 1. Registrar um aplicativo no Microsoft Entra ID como aplicativo de desktop/público e anotar o **Application (client) ID** e o **Directory (tenant) ID**.
 2. Em **Authentication**, habilitar **Allow public client flows**.
 3. Adicionar permissões delegadas do Microsoft Graph: `User.Read`, `Mail.Read` e `Mail.Read.Shared`. O consentimento administrativo pode ser exigido pela política corporativa.
-4. Distribuir o executável da versão `0.0.3.0`. O `client_id`, o `tenant_id` e as duas caixas compartilhadas homologadas já estão incorporados, portanto o usuário final não precisa criar ou editar arquivos JSON.
+4. Distribuir o executável da versão `0.0.3.1`. O `client_id`, o `tenant_id` e as duas caixas compartilhadas homologadas já estão incorporados, portanto o usuário final não precisa criar ou editar arquivos JSON.
 5. Em **Authentication → Add a platform → Mobile and desktop applications**, registrar a URI do broker Windows `ms-appx-web://Microsoft.AAD.BrokerPlugin/99944267-f7a2-49ed-89a8-89d70be31a8f`.
 
 Durante o desenvolvimento, um arquivo opcional em `%LOCALAPPDATA%\PetronectEmailExtractor\graph_config.json` pode sobrescrever a configuração incorporada. Isso permite testes controlados sem alterar o comportamento padrão do executável. A configuração incorporada é:
@@ -153,7 +153,7 @@ A solução foi baseada nos projetos oficiais [MSAL Python](https://github.com/A
 Uso recomendado do executável:
 
 1. Confirme que o aplicativo Microsoft Entra foi aprovado pelo TI. Não é necessário configurar JSON; mantenha o Outlook clássico disponível para o fallback local.
-2. Abra `Petronect Email Extractor v0.0.3.0.exe` fora de qualquer arquivo compactado.
+2. Abra `Petronect Email Extractor v0.0.3.1.exe` fora de qualquer arquivo compactado.
 3. Confira o indicador ao lado de **Caixa de pesquisa**: `● Entra ID` em verde identifica o Microsoft Graph e `● Classic` em vermelho identifica o Outlook clássico. Clique no próprio indicador para alternar a fonte.
 4. Selecione a caixa de pesquisa e a pasta do Outlook.
 5. Informe a data e a hora inicial digitando os campos ou utilizando o calendário. O corte não pode ser posterior à data e hora atuais.
@@ -185,6 +185,7 @@ Ao abrir a aplicação, o campo **Salvar Excel em** é preenchido automaticament
 - Autentica no Microsoft Graph pelo broker WAM no Windows, reutiliza tokens protegidos e fornece ao Entra os sinais de dispositivo necessários para Conditional Access; o código de dispositivo permanece apenas como fallback fora do Windows.
 - Consulta a caixa principal e caixas compartilhadas configuradas, com paginação e retentativas para limitação ou indisponibilidade transitória do serviço.
 - Exibe somente os nomes amigáveis das pastas; os identificadores internos usados pelo Graph permanecem ocultos e são registrados apenas no diagnóstico técnico quando necessário.
+- Pelo Graph, lista todas as pastas visíveis da raiz da caixa e percorre até dois níveis de subpastas; isso inclui pastas criadas no Outlook Online fora da Inbox.
 - Indica a fonte ativa em um botão sem borda colorida (`Entra ID` verde ou `Classic` vermelho), permite alternância manual e usa o Outlook clássico automaticamente quando a conexão inicial com o Graph falha.
 - Mantém os campos fixos verticalmente durante o redimensionamento; somente o espaço destinado ao log acompanha o tamanho disponível da janela.
 - Carrega caixas e pastas iniciais fora da thread gráfica, mantendo a janela desenhada e responsiva; falhas são registradas em `%LOCALAPPDATA%\PetronectEmailExtractor\logs` e liberam a interface em estado estável.
@@ -238,7 +239,7 @@ As amostras não registram remetente, destinatários, texto do assunto nem conte
 
 <h2 id="última-release">Última release</h2>
 
-A versão **0.0.3.0** é a release pública atual. A página abaixo contém o executável, as notas da versão e os arquivos-fonte; versões anteriores continuam disponíveis no histórico de releases.
+A versão **0.0.3.1** é a release pública atual. A página abaixo contém o executável, as notas da versão e os arquivos-fonte; versões anteriores continuam disponíveis no histórico de releases.
 
 <p align="center">
   <a href="https://github.com/Marcus300/petronect-email-extractor/releases/latest"><strong>Acessar a página de download da última release »</strong></a>
@@ -278,8 +279,8 @@ As versões anteriores continuam disponíveis no [histórico completo de release
 Para publicar uma versão, atualize `email_extractor/version.py` e `version_info.txt`, execute os testes e envie uma tag correspondente:
 
 ```powershell
-git tag -a v0.0.3.0 -m "Petronect Email Extractor v0.0.3.0"
-git push origin v0.0.3.0
+git tag -a v0.0.3.1 -m "Petronect Email Extractor v0.0.3.1"
+git push origin v0.0.3.1
 ```
 
 O workflow testa o projeto no Windows, valida a correspondência entre tag e metadados, gera o `.exe` e o anexa à release. Nunca substitua uma tag publicada: cada nova versão deve receber uma nova tag, preservando downloads e notas anteriores.

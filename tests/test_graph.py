@@ -3,8 +3,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
+from unittest.mock import Mock
 
-from email_extractor.graph import EMBEDDED_GRAPH_CONFIG, GraphEmailSource, load_graph_config
+from email_extractor.graph import EMBEDDED_GRAPH_CONFIG, GraphEmailSource, GraphMailbox, load_graph_config
 
 
 class GraphTests(unittest.TestCase):
@@ -52,6 +53,37 @@ class GraphTests(unittest.TestCase):
     def test_graph_folder_path_round_trip(self) -> None:
         path = GraphEmailSource._folder_path("shared@example.com", "A+/= folder")
         self.assertEqual(GraphEmailSource._parse_folder_path(path), ("shared@example.com", "A+/= folder"))
+
+    def test_folder_listing_includes_root_siblings_and_their_children(self) -> None:
+        source = object.__new__(GraphEmailSource)
+        source._mailboxes = {"Conta": GraphMailbox("Conta", "me")}
+        source._get = Mock(
+            return_value={
+                "id": "inbox-id",
+                "displayName": "Inbox",
+                "childFolderCount": 1,
+            }
+        )
+        source._pages = Mock(
+            side_effect=[
+                iter(
+                    [
+                        {"id": "projects-id", "displayName": "Projetos", "childFolderCount": 1},
+                        {"id": "inbox-id", "displayName": "Inbox", "childFolderCount": 1},
+                    ]
+                ),
+                iter([{"id": "inbox-child", "displayName": "Sala", "childFolderCount": 0}]),
+                iter([{"id": "project-child", "displayName": "2026", "childFolderCount": 0}]),
+            ]
+        )
+
+        folders = source.list_inbox_folders("Conta", max_depth=2)
+
+        self.assertEqual(
+            [(depth, name) for depth, name, _path in folders],
+            [(0, "Inbox"), (1, "Sala"), (0, "Projetos"), (1, "2026")],
+        )
+        self.assertEqual(source._pages.call_count, 3)
 
 
 if __name__ == "__main__":

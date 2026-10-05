@@ -2,6 +2,14 @@
 
 Este projeto segue tags no formato `vMAJOR.MINOR.PATCH.REVISION`. As versões publicadas permanecem disponíveis no histórico de releases do GitHub.
 
+## [0.0.3.1] — 2026-10-05
+
+### Alterado
+
+- A enumeração de pastas pelo Microsoft Graph passa a começar na raiz da caixa, incluindo pastas visíveis criadas no mesmo nível da Inbox pelo Outlook Online.
+- Cada pasta da raiz passa a ter até dois níveis de subpastas percorridos, preservando hierarquia, ordenação alfabética, paginação e nomes amigáveis.
+- A Inbox permanece como primeiro item da lista para manter o fluxo principal de pesquisa.
+
 ## [0.0.3.0] — 2026-10-05
 
 ### Adicionado
@@ -193,3 +201,4 @@ Este projeto segue tags no formato `vMAJOR.MINOR.PATCH.REVISION`. As versões pu
 [0.0.2.0]: https://github.com/marcus300/petronect-email-extractor/releases/tag/v0.0.2.0
 [0.0.2.1]: https://github.com/marcus300/petronect-email-extractor/releases/tag/v0.0.2.1
 [0.0.3.0]: https://github.com/marcus300/petronect-email-extractor/releases/tag/v0.0.3.0
+[0.0.3.1]: https://github.com/marcus300/petronect-email-extractor/releases/tag/v0.0.3.1

@@ -251,9 +251,14 @@ class GraphEmailSource:
         return unquote(parsed.netloc), unquote(parsed.path.strip("/"))
 
     def list_inbox_folders(self, mailbox_name: str, max_depth: int = 2) -> list[tuple[int, str, str]]:
+        """List every visible root mail folder and descendants up to max_depth."""
         mailbox = self._mailbox(mailbox_name)
         base = self._user_base(mailbox.user_id)
         inbox = self._get(f"{GRAPH_ROOT}{base}/mailFolders/inbox?$select=id,displayName,childFolderCount")
+        query = urlencode({"$select": "id,displayName,childFolderCount", "$top": "100"})
+        root_folders = list(self._pages(f"{GRAPH_ROOT}{base}/mailFolders?{query}"))
+        root_by_id = {str(folder.get("id", "")): folder for folder in root_folders if folder.get("id")}
+        root_by_id.setdefault(str(inbox["id"]), inbox)
         result: list[tuple[int, str, str]] = []
 
         def append(folder: dict, depth: int) -> None:
@@ -261,12 +266,20 @@ class GraphEmailSource:
             result.append((depth, str(folder.get("displayName") or "Inbox"), self._folder_path(mailbox.user_id, folder_id)))
             if depth >= max_depth or not folder.get("childFolderCount"):
                 return
-            query = urlencode({"$select": "id,displayName,childFolderCount", "$top": "100"})
             children = list(self._pages(f"{GRAPH_ROOT}{base}/mailFolders/{quote(folder_id, safe='')}/childFolders?{query}"))
             for child in sorted(children, key=lambda item: alphabetical_key(str(item.get("displayName", "")))):
                 append(child, depth + 1)
 
-        append(inbox, 0)
+        inbox_id = str(inbox["id"])
+        ordered_roots = sorted(
+            root_by_id.values(),
+            key=lambda folder: (
+                str(folder.get("id")) != inbox_id,
+                alphabetical_key(str(folder.get("displayName", ""))),
+            ),
+        )
+        for root_folder in ordered_roots:
+            append(root_folder, 0)
         return result
 
     @staticmethod
