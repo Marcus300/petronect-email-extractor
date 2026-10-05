@@ -1,0 +1,14 @@
+{
+  "client_id": "99944267-f7a2-49ed-89a8-89d70be31a8f",
+  "tenant_id": "eb06985d-06ca-4a17-81da-629ab99f6505",
+  "shared_mailboxes": [
+    {
+      "label": "Petrobras, Suporte",
+      "user_id": "Suporte.Petrobras@emerson.com"
+    },
+    {
+      "label": "petronect, notificacoes",
+      "user_id": "notificacoes.petronect@emerson.com"
+    }
+  ]
+}

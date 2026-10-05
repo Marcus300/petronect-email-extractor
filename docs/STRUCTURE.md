@@ -21,12 +21,14 @@ sala/
 │   ├── calendar_model.py       # Cálculos do calendário PT-BR iniciado no domingo
 │   ├── diagnostics.py          # Metadados e logs de falha
 │   ├── export.py               # Geração atômica do Excel
+│   ├── graph.py                # Autenticação e leitura pelo Microsoft Graph
 │   ├── models.py               # Modelos de dados
 │   ├── localization.py         # Textos PT-BR e ordenação alfabética determinística
 │   ├── outlook.py              # Leitura recursiva do Outlook
 │   ├── paths.py                # Pastas do usuário e destino padrão do Excel
 │   ├── petronect.py            # Interpretação das notificações
 │   ├── purchase_order.py       # Parser de pedidos SAP Business Network / Ariba
+│   ├── source_factory.py       # Seleção explícita da fonte de e-mail
 │   ├── ui.py                   # Interface gráfica
 │   ├── update_checker.py       # Consulta da release mais recente no GitHub
 │   └── updater.py              # Download, validação e substituição segura do executável
@@ -37,6 +39,7 @@ sala/
 ├── CHANGELOG.md                # Histórico visível de versões
 ├── LICENSE                     # Licença MIT
 ├── build_exe.ps1               # Geração do executável com PyInstaller
+├── graph_config.example.json   # Modelo sem segredos para o Microsoft Graph
 ├── main.py                     # Ponto de entrada
 ├── README.md
 ├── requirements.txt

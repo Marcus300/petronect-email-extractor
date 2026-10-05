@@ -3,7 +3,7 @@ from datetime import datetime
 import tkinter as tk
 from unittest.mock import Mock, patch
 
-from email_extractor.ui import ExtractorWindow
+from email_extractor.ui import CURRENT_CHANGELOG_SUMMARY, ExtractorWindow
 from email_extractor.models import uses_room_layout
 
 
@@ -48,6 +48,11 @@ class PopupStub:
 
 
 class UiTests(unittest.TestCase):
+    def test_about_changelog_summary_covers_current_release_highlights(self) -> None:
+        self.assertIn("Microsoft Graph", CURRENT_CHANGELOG_SUMMARY)
+        self.assertIn("Outlook clássico", CURRENT_CHANGELOG_SUMMARY)
+        self.assertIn("fallback automático", CURRENT_CHANGELOG_SUMMARY)
+
     def test_calendar_real_window_is_single_instance_and_can_reopen(self) -> None:
         try:
             root = tk.Tk()
@@ -168,15 +173,17 @@ class UiTests(unittest.TestCase):
         self.assertFalse(uses_room_layout(""))
         self.assertFalse(uses_room_layout("[EXTERNAL] SALA"))
 
-    @patch("email_extractor.outlook.OutlookEmailSource")
-    def test_folder_dropdown_refreshes_subfolders_and_preserves_selection(self, source_type) -> None:
+    @patch("email_extractor.source_factory.create_email_source")
+    def test_folder_dropdown_refreshes_subfolders_and_preserves_selection(self, create_source) -> None:
         window = object.__new__(ExtractorWindow)
         window.mailbox = TextVariable("petronect, notificacoes")
         window.folder_path = TextVariable(r"\\petronect, notificacoes\Inbox")
+        window.folder_display = TextVariable("Inbox")
         window.folder_combo = ComboStub()
         window._folder_options = {}
+        window.source_mode = "graph"
         window._write_log = lambda _message: None
-        source_type.return_value.list_inbox_folders.return_value = [
+        create_source.return_value.list_inbox_folders.return_value = [
             (0, "Inbox", r"\\petronect, notificacoes\Inbox"),
             (1, "Arquivo", r"\\petronect, notificacoes\Inbox\Arquivo"),
         ]
@@ -184,11 +191,44 @@ class UiTests(unittest.TestCase):
         window._refresh_inbox_folders()
 
         self.assertEqual(window.folder_path.get(), r"\\petronect, notificacoes\Inbox")
+        self.assertEqual(window.folder_display.get(), "Inbox")
         self.assertEqual(window.folder_combo.values, ["Inbox", "    Arquivo"])
         self.assertEqual(
             window._folder_options["    Arquivo"],
             r"\\petronect, notificacoes\Inbox\Arquivo",
         )
+
+    def test_folder_selection_keeps_graph_identifier_hidden(self) -> None:
+        window = object.__new__(ExtractorWindow)
+        window.folder_display = TextVariable("    Arquivo")
+        window.folder_path = TextVariable("")
+        window._folder_options = {
+            "Inbox": "graph://Suporte.Petrobras%40emerson.com/inbox-id",
+            "    Arquivo": "graph://Suporte.Petrobras%40emerson.com/archive-id",
+        }
+
+        window._folder_selected()
+
+        self.assertEqual(window.folder_display.get(), "    Arquivo")
+        self.assertEqual(
+            window.folder_path.get(),
+            "graph://Suporte.Petrobras%40emerson.com/archive-id",
+        )
+
+    def test_indicator_uses_requested_source_colors_and_labels(self) -> None:
+        window = object.__new__(ExtractorWindow)
+        window.source_indicator = TextVariable("")
+        window.source_button = Mock()
+        window.source_mode = "graph"
+
+        window._update_source_indicator()
+        self.assertEqual(window.source_indicator.get(), "● Entra ID")
+        self.assertEqual(window.source_button.configure.call_args.kwargs["foreground"], "#168A4A")
+
+        window.source_mode = "classic"
+        window._update_source_indicator()
+        self.assertEqual(window.source_indicator.get(), "● Classic")
+        self.assertEqual(window.source_button.configure.call_args.kwargs["foreground"], "#CF222E")
 
     def test_today_returns_to_current_month_year_and_updates_fields(self) -> None:
         window = object.__new__(ExtractorWindow)

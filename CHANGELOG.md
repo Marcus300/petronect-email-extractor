@@ -2,6 +2,39 @@
 
 Este projeto segue tags no formato `vMAJOR.MINOR.PATCH.REVISION`. As versões publicadas permanecem disponíveis no histórico de releases do GitHub.
 
+## [0.0.3.0] — 2026-10-05
+
+### Adicionado
+
+- Fonte de e-mail independente baseada no Microsoft Graph, mantida em módulo separado da integração COM existente.
+- Autenticação delegada pelo broker Windows Web Account Manager (WAM), compatível com MFA, identidade do dispositivo e Conditional Access, sem senha ou segredo de cliente no executável.
+- Cache persistente de tokens protegido pela Data Protection API do Windows.
+- Bloqueio coordenado do cache de autenticação para evitar corrupção em acessos concorrentes.
+- Consulta paginada da caixa principal e de caixas compartilhadas configuradas, incluindo Inbox e até dois níveis de subpastas.
+- Aplicação do corte de data no servidor Graph em UTC, reduzindo tráfego e evitando baixar mensagens antigas desnecessariamente.
+- Tratamento de limitação do Graph (`HTTP 429`) e falhas transitórias de servidor com respeito a `Retry-After`.
+- Modelo opcional `graph_config.example.json` para sobrescritas controladas durante desenvolvimento e homologação.
+- Diagnósticos estruturais específicos do Graph sem registrar assunto, remetente ou conteúdo das mensagens.
+- Testes do formato das datas Graph, dos identificadores de pasta e da configuração local sem segredos.
+- Configuração de distribuição incorporada com o aplicativo público Microsoft Entra, o locatário Emerson e as caixas `Petrobras, Suporte` e `petronect, notificacoes`.
+
+### Alterado
+
+- A interface passa a oferecer Microsoft Graph e Outlook clássico como fontes ativas, com seleção explícita e isolamento entre as conexões.
+- A inicialização prioriza o Microsoft Graph e recorre ao Outlook clássico quando a conexão corporativa não está disponível.
+- Falhas causadas pela configuração inicial ainda não preenchida agora exibem diretamente o caminho do arquivo e a ação necessária, além de manter o traceback completo no log técnico.
+- A autenticação Graph passa a usar um popup próprio com ícone do projeto, código selecionável, botão `Copiar código` e link clicável para a página oficial de login; a janela é encerrada automaticamente após a conexão.
+- O executável deixa de depender de `graph_config.json` no computador do usuário; um arquivo local válido permanece disponível somente como sobrescrita opcional para desenvolvimento e homologação.
+- O login no Windows deixa de usar device code como método principal e passa a usar WAM, evitando o bloqueio `53003` causado pela ausência de sinais do dispositivo; device code permanece apenas como fallback fora do Windows.
+- Falhas de autenticação passam a registrar código, descrição e correlation ID retornados pelo MSAL e orientam a verificação da URI do broker e das políticas de Conditional Access.
+- O ambiente virtual de desenvolvimento passa a usar Python 3.13.9 de 64 bits, substituindo o ambiente quebrado que ainda apontava para Python 3.14 removido.
+- O campo de pastas passa a manter separadamente o nome amigável e o identificador interno do Graph, impedindo que endereços técnicos `graph://` sejam exibidos ao usuário.
+- A integração com o Outlook clássico volta a ficar habilitada e pode ser alternada manualmente pelo indicador de fonte ao lado da caixa de pesquisa.
+- A inicialização tenta primeiro o Microsoft Graph e recorre automaticamente ao Outlook clássico quando a conexão Graph não está disponível.
+- O indicador `Entra ID` em verde ou `Classic` em vermelho informa a fonte ativa sem borda colorida e funciona também como botão de alternância.
+- O botão `Sobre` permanece fixo no topo; os campos mantêm suas posições verticais e somente a área livre do log cresce ou diminui com a janela.
+- A janela `Sobre` passa a exibir, logo abaixo da última versão consultada, um resumo legível das principais alterações da versão atual.
+
 ## [0.0.2.1] — 2026-09-17
 
 ### Adicionado
@@ -159,3 +192,4 @@ Este projeto segue tags no formato `vMAJOR.MINOR.PATCH.REVISION`. As versões pu
 [0.0.1.2]: https://github.com/marcus300/petronect-email-extractor/releases/tag/v0.0.1.2
 [0.0.2.0]: https://github.com/marcus300/petronect-email-extractor/releases/tag/v0.0.2.0
 [0.0.2.1]: https://github.com/marcus300/petronect-email-extractor/releases/tag/v0.0.2.1
+[0.0.3.0]: https://github.com/marcus300/petronect-email-extractor/releases/tag/v0.0.3.0

@@ -57,18 +57,31 @@ class OutlookEmailSource:
 
     def __init__(self) -> None:
         try:
+            import pythoncom
             import win32com.client
         except ImportError as exc:
             raise OutlookUnavailableError(
                 "pywin32 não está instalado. Instale as dependências do projeto."
             ) from exc
+        self._pythoncom = pythoncom
+        self._com_initialized = False
         try:
+            pythoncom.CoInitialize()
+            self._com_initialized = True
             self._outlook = win32com.client.Dispatch("Outlook.Application")
             self._namespace = self._outlook.GetNamespace("MAPI")
         except Exception as exc:
+            self.close()
             raise OutlookUnavailableError(
                 "Não foi possível conectar ao Outlook instalado neste computador."
             ) from exc
+
+    def close(self) -> None:
+        self._namespace = None
+        self._outlook = None
+        if getattr(self, "_com_initialized", False):
+            self._com_initialized = False
+            self._pythoncom.CoUninitialize()
 
     def list_folder_tree(self) -> list[tuple[str, str, str]]:
         folders = []

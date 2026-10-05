@@ -19,8 +19,11 @@ Se você descobrir uma vulnerabilidade de segurança neste projeto:
 
 Este projeto aplica as seguintes medidas para minimizar riscos:
 
-* O projeto não solicita nem armazena credenciais do Outlook.
-* O acesso ocorre pelo perfil local já autenticado no Outlook desktop.
+* O projeto não solicita nem armazena senhas do Outlook ou do Microsoft 365.
+* A fonte clássica usa o perfil local do Outlook; a fonte Graph usa autenticação delegada MSAL com WAM no Windows, compatível com MFA, identidade do dispositivo e Conditional Access.
+* O cache Graph é persistido no perfil do usuário e protegido pela Data Protection API do Windows.
+* O aplicativo desktop é cliente público: nenhum `client_secret` deve ser criado, distribuído ou versionado.
+* `client_id`, `tenant_id` e endereços das caixas homologadas são configurações públicas incorporadas ao executável; autenticação, MFA, consentimento e permissões de caixa continuam obrigatórios.
 * O `.gitignore` impede o versionamento de arquivos locais, planilhas e logs.
 * A verificação de atualizações acessa somente a API pública de releases do repositório oficial.
 
@@ -28,7 +31,7 @@ Este projeto aplica as seguintes medidas para minimizar riscos:
 
 ## 🚫 Evite
 
-* Versionar arquivos `.env` contendo senhas ou tokens
+* Versionar arquivos `.env`, `graph_config.json` ou caches contendo identificadores locais ou tokens
 * Armazenar caminhos de rede ou diretórios de usuários reais em arquivos públicos
 * Compartilhar capturas de tela com dados confidenciais
 
@@ -38,7 +41,7 @@ Este projeto aplica as seguintes medidas para minimizar riscos:
 
 * Rotacionar credenciais periodicamente
 * Revisar planilhas e logs antes de compartilhá-los, pois podem conter dados de mensagens.
-* Manter `pywin32`, `openpyxl` e PyInstaller atualizados e testados.
+* Manter `pywin32`, `openpyxl`, MSAL, MSAL Extensions e PyInstaller atualizados e testados.
 
 ---
 

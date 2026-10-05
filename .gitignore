@@ -10,6 +10,8 @@ env/
 .env
 .env.*
 !.env.example
+graph_config.json
+msal_token_cache.bin
 .python-version
 .pytest_cache/
 .mypy_cache/
@@ -46,3 +48,4 @@ Desktop.ini
 # Local GitHub CLI and release artifacts
 .github-token
 release-assets/
+ms-identity-python-webapp-master.zip

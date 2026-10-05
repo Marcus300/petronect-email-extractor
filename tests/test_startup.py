@@ -29,13 +29,11 @@ class StartupTests(unittest.TestCase):
         start.assert_not_called()
         root.after.assert_any_call(50, start)
 
-    @patch("email_extractor.outlook.OutlookEmailSource")
-    @patch("pythoncom.CoUninitialize")
-    @patch("pythoncom.CoInitialize")
-    def test_worker_uses_one_com_connection_and_returns_only_plain_data(
-        self, co_initialize, co_uninitialize, source_type
+    @patch("email_extractor.source_factory.create_email_source")
+    def test_worker_uses_one_graph_connection_and_returns_only_plain_data(
+        self, create_source
     ) -> None:
-        source = source_type.return_value
+        source = create_source.return_value
         source.list_mailboxes.return_value = ["Caixa"]
         source.list_inbox_folders.return_value = [(0, "Inbox", r"\\Caixa\Inbox")]
         window = object.__new__(ExtractorWindow)
@@ -48,14 +46,15 @@ class StartupTests(unittest.TestCase):
         worker_thread.join(3)
 
         self.assertFalse(worker_thread.is_alive())
-        co_initialize.assert_called_once()
-        co_uninitialize.assert_called_once()
-        source_type.assert_called_once()
+        create_source.assert_called_once()
+        self.assertTrue(callable(create_source.call_args.kwargs["on_authentication"]))
+        self.assertIsNone(create_source.call_args.kwargs["parent_window_handle"])
+        self.assertEqual(create_source.call_args.kwargs["mode"], "graph")
         source.list_mailboxes.assert_called_once()
         source.list_inbox_folders.assert_called_once_with("Caixa", max_depth=2)
         events = list(window.startup_queue.queue)
         result = next(value for event, value in events if event == "result")
-        self.assertEqual(result, (["Caixa"], [(0, "Inbox", r"\\Caixa\Inbox")]))
+        self.assertEqual(result, ("graph", ["Caixa"], [(0, "Inbox", r"\\Caixa\Inbox")]))
         self.assertTrue(all(isinstance(event, str) for event, _value in events))
 
     def test_determined_progress_is_clamped_and_monotonic(self) -> None:
@@ -134,7 +133,9 @@ class StartupTests(unittest.TestCase):
         window._apply_initial_data = Mock()
         window._start_update_check = Mock()
 
-        window._complete_initialization(["Caixa"], [(0, "Inbox", r"\\Caixa\Inbox")])
+        window.source_button = Mock()
+        window.source_indicator = Mock()
+        window._complete_initialization("graph", ["Caixa"], [(0, "Inbox", r"\\Caixa\Inbox")])
 
         self.assertEqual(window.startup_progress, 100)
         self.assertFalse(window.startup_indeterminate)
@@ -142,6 +143,26 @@ class StartupTests(unittest.TestCase):
         window.main_frame.pack.assert_called_once_with(fill="both", expand=True)
         window.mailbox_combo.focus_set.assert_not_called()
         window.root.after_idle.assert_called_once_with(window._reveal_main_interface)
+
+    @patch("email_extractor.source_factory.create_email_source")
+    def test_startup_falls_back_to_classic_when_graph_fails(self, create_source) -> None:
+        classic = Mock()
+        classic.list_mailboxes.return_value = ["Caixa clássica"]
+        classic.list_inbox_folders.return_value = [(0, "Inbox", r"\\Caixa clássica\Inbox")]
+        create_source.side_effect = [RuntimeError("Graph indisponível"), classic]
+        window = object.__new__(ExtractorWindow)
+        window.startup_queue = Queue()
+        window.startup_stop_event = threading.Event()
+        window.startup_logger = Mock()
+
+        window._initialization_worker()
+
+        modes = [call.kwargs["mode"] for call in create_source.call_args_list]
+        self.assertEqual(modes, ["graph", "classic"])
+        events = list(window.startup_queue.queue)
+        self.assertTrue(any(event == "source_fallback" for event, _value in events))
+        result = next(value for event, value in events if event == "result")
+        self.assertEqual(result[0], "classic")
 
     def test_excel_export_is_imported_lazily(self) -> None:
         import email_extractor.ui as ui

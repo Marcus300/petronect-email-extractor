@@ -28,6 +28,12 @@ from .version import __version__
 DATE_FORMAT = "%d/%m/%Y %H:%M"
 PROJECT_VERSION = __version__
 PROJECT_GITHUB_URL = "https://github.com/marcus300"
+CURRENT_CHANGELOG_SUMMARY = (
+    "• Microsoft Graph com autenticação corporativa pelo Entra ID.\n"
+    "• Outlook clássico reativado, com alternância manual e fallback automático.\n"
+    "• Caixas compartilhadas e pastas exibidas com nomes amigáveis.\n"
+    "• Interface reorganizada e diagnóstico de conexão aprimorado."
+)
 
 
 class ExtractorWindow:
@@ -37,8 +43,15 @@ class ExtractorWindow:
         self._set_window_icon()
         self.root.geometry("820x640")
         self.root.minsize(700, 500)
+        try:
+            self.window_handle = int(self.root.winfo_id())
+        except (TypeError, ValueError, tk.TclError):
+            self.window_handle = None
         self.mailbox = tk.StringVar()
         self.folder_path = tk.StringVar()
+        self.folder_display = tk.StringVar()
+        self.source_mode = "graph"
+        self.source_indicator = tk.StringVar(value="● Entra ID")
         now = datetime.now()
         self.date_day = tk.StringVar(value=now.strftime("%d"))
         self.date_month = tk.StringVar(value=now.strftime("%m"))
@@ -58,6 +71,7 @@ class ExtractorWindow:
         self.update_notification_version = ""
         self.about_popup: tk.Toplevel | None = None
         self.calendar_popup: tk.Toplevel | None = None
+        self.graph_auth_popup: tk.Toplevel | None = None
         self.latest_version_label: ttk.Label | None = None
         self.update_button: ttk.Button | None = None
         self.startup_logger = StartupLogger(process_started_at)
@@ -73,6 +87,7 @@ class ExtractorWindow:
         self.startup_slow_id = None
         self.closing = False
         self._folder_options: dict[str, str] = {}
+        self.source_switch_in_progress = False
         self.startup_logger.write("Processo Python iniciado")
         self.startup_logger.write("Janela criada")
         self._build()
@@ -99,26 +114,37 @@ class ExtractorWindow:
         self.main_frame = frame
         frame.pack(fill="both", expand=True)
         frame.columnconfigure(1, weight=1)
-        frame.rowconfigure(1, weight=1)
         toolbar = ttk.Frame(frame)
-        toolbar.grid(row=0, column=2, sticky="e", pady=(0, 8))
+        toolbar.grid(row=0, column=0, columnspan=3, sticky="nw", pady=(0, 8))
         ttk.Button(toolbar, text="Sobre", command=self._show_about).pack()
-        ttk.Label(frame, text="Caixa de pesquisa").grid(row=0, column=0, sticky="w", pady=6)
+        ttk.Label(frame, text="Caixa de pesquisa").grid(row=1, column=0, sticky="w", pady=6)
         self.mailbox_combo = ttk.Combobox(frame, textvariable=self.mailbox, state="readonly")
-        self.mailbox_combo.grid(row=0, column=1, sticky="ew", pady=6)
+        self.mailbox_combo.grid(row=1, column=1, sticky="ew", pady=6)
         self.mailbox_combo.bind("<<ComboboxSelected>>", self._mailbox_selected)
-        ttk.Label(frame, text="Pasta e subpastas (até 2 níveis)").grid(row=1, column=0, sticky="w", pady=6)
+        self.source_button = tk.Button(
+            frame,
+            textvariable=self.source_indicator,
+            command=self._switch_email_source,
+            relief="flat",
+            borderwidth=0,
+            padx=12,
+            pady=4,
+            cursor="hand2",
+            font=("Segoe UI", 9, "bold"),
+        )
+        self.source_button.grid(row=1, column=2, sticky="ew", padx=(8, 0), pady=6)
+        ttk.Label(frame, text="Pasta e subpastas (até 2 níveis)").grid(row=2, column=0, sticky="w", pady=6)
         self.folder_combo = ttk.Combobox(
             frame,
-            textvariable=self.folder_path,
+            textvariable=self.folder_display,
             state="readonly",
             postcommand=self._refresh_inbox_folders,
         )
-        self.folder_combo.grid(row=1, column=1, sticky="ew", pady=6)
+        self.folder_combo.grid(row=2, column=1, columnspan=2, sticky="ew", pady=6)
         self.folder_combo.bind("<<ComboboxSelected>>", self._folder_selected)
-        ttk.Label(frame, text="Data inicial").grid(row=2, column=0, sticky="w", pady=6)
+        ttk.Label(frame, text="Data inicial").grid(row=3, column=0, sticky="w", pady=6)
         date_frame = ttk.Frame(frame)
-        date_frame.grid(row=2, column=1, sticky="w", pady=6)
+        date_frame.grid(row=3, column=1, sticky="w", pady=6)
         self._add_segment(date_frame, self.date_day, 2, 31, minimum=1)
         ttk.Label(date_frame, text="/").pack(side="left")
         self._add_segment(date_frame, self.date_month, 2, 12, minimum=1)
@@ -126,36 +152,36 @@ class ExtractorWindow:
         self._add_segment(date_frame, self.date_year, 4, 9999, minimum=1)
         ttk.Button(date_frame, text="Calendário", command=self._show_calendar).pack(side="left", padx=(8, 0))
 
-        ttk.Label(frame, text="Hora inicial").grid(row=3, column=0, sticky="w", pady=6)
+        ttk.Label(frame, text="Hora inicial").grid(row=4, column=0, sticky="w", pady=6)
         time_frame = ttk.Frame(frame)
-        time_frame.grid(row=3, column=1, sticky="w", pady=6)
+        time_frame.grid(row=4, column=1, sticky="w", pady=6)
         self._add_segment(time_frame, self.time_hour, 2, 23)
         ttk.Label(time_frame, text=":").pack(side="left")
         self._add_segment(time_frame, self.time_minute, 2, 59)
 
-        ttk.Label(frame, text="Assunto contém").grid(row=4, column=0, sticky="w", pady=6)
+        ttk.Label(frame, text="Assunto contém").grid(row=5, column=0, sticky="w", pady=6)
         self.subject_combo = ttk.Combobox(
             frame,
             textvariable=self.subject,
             values=SUBJECT_OPTIONS,
             state="normal",
         )
-        self.subject_combo.grid(row=4, column=1, sticky="ew", pady=6)
-        ttk.Label(frame, text="Salvar Excel em").grid(row=5, column=0, sticky="w", pady=6)
-        ttk.Entry(frame, textvariable=self.output_path).grid(row=5, column=1, sticky="ew", pady=6)
-        ttk.Button(frame, text="Escolher", command=self._choose_output).grid(row=5, column=2, padx=(8, 0))
+        self.subject_combo.grid(row=5, column=1, columnspan=2, sticky="ew", pady=6)
+        ttk.Label(frame, text="Salvar Excel em").grid(row=6, column=0, sticky="w", pady=6)
+        ttk.Entry(frame, textvariable=self.output_path).grid(row=6, column=1, sticky="ew", pady=6)
+        ttk.Button(frame, text="Escolher", command=self._choose_output).grid(row=6, column=2, padx=(8, 0))
         buttons = ttk.Frame(frame)
-        buttons.grid(row=6, column=1, sticky="e", pady=(10, 8))
+        buttons.grid(row=7, column=1, columnspan=2, sticky="e", pady=(10, 8))
         self.search_button = ttk.Button(buttons, text="Pesquisar e gerar Excel", command=self._run)
         self.search_button.pack(side="left", padx=(0, 8))
         self.cancel_button = ttk.Button(buttons, text="Encerrar execução", command=self._cancel, state="disabled")
         self.cancel_button.pack(side="left")
         self.open_button = ttk.Button(buttons, text="Abrir Excel recente", command=self._open_latest, state="disabled")
         self.open_button.pack(side="left", padx=(8, 0))
-        ttk.Label(frame, text="Log da execução").grid(row=7, column=0, sticky="nw", pady=(4, 6))
+        ttk.Label(frame, text="Log da execução").grid(row=8, column=0, sticky="nw", pady=(4, 6))
         self.log = ScrolledText(frame, height=10, state="disabled", wrap="word")
-        self.log.grid(row=7, column=1, columnspan=2, sticky="nsew", pady=(4, 6))
-        frame.rowconfigure(7, weight=1)
+        self.log.grid(row=8, column=1, columnspan=2, sticky="nsew", pady=(4, 6))
+        frame.rowconfigure(8, weight=1)
         ttk.Label(frame, text="Entrar em contato:").grid(row=9, column=0, sticky="w", pady=(8, 0))
         self._add_link(
             frame,
@@ -164,6 +190,7 @@ class ExtractorWindow:
             row=9,
             column=1,
         )
+        self._update_source_indicator()
 
     def _build_loading_screen(self) -> None:
         self.loading_frame = tk.Frame(self.root, background="#F6F8FA")
@@ -239,44 +266,61 @@ class ExtractorWindow:
         self.startup_slow_id = self.root.after(8000, self._show_slow_startup_message)
 
     def _initialization_worker(self) -> None:
-        com_initialized = False
-        try:
-            import pythoncom
-            from .outlook import OutlookEmailSource
-
-            pythoncom.CoInitialize()
-            com_initialized = True
-            self._startup_event("progress", (10, "Preparando recursos..."))
-            self._startup_event("progress", (20, "Preparando integração com o Outlook..."))
-            self._startup_event("indeterminate", "Conectando ao Outlook...")
-            self.startup_logger.write("Início da conexão com Outlook")
-            source = OutlookEmailSource()
-            self.startup_logger.write("Conexão com Outlook concluída")
-            self._startup_event("progress", (40, "Outlook conectado"))
-            mailboxes = source.list_mailboxes()
-            self.startup_logger.write(f"Caixas carregadas: {len(mailboxes)}")
-            self._startup_event("progress", (65, "Caixas de e-mail carregadas"))
-            folders = []
-            if mailboxes and not self.startup_stop_event.is_set():
-                self.startup_logger.write("Início da enumeração de pastas")
-                try:
+        self._startup_event("progress", (10, "Preparando recursos..."))
+        graph_error = ""
+        for mode, label in (("graph", "Microsoft Graph"), ("classic", "Outlook clássico")):
+            source = None
+            try:
+                self._startup_event("progress", (20, f"Preparando integração com {label}..."))
+                self._startup_event("indeterminate", f"Conectando ao {label}...")
+                self.startup_logger.write(f"Início da conexão com {label}")
+                source = self._create_source(
+                    mode,
+                    on_authentication=(
+                        (lambda flow: self._startup_event("graph_auth", flow))
+                        if mode == "graph"
+                        else None
+                    ),
+                )
+                mailboxes = source.list_mailboxes()
+                self.startup_logger.write(f"Conexão com {label} concluída")
+                self._startup_event("progress", (65, f"Caixas carregadas pelo {label}"))
+                folders = []
+                if mailboxes and not self.startup_stop_event.is_set():
                     folders = source.list_inbox_folders(mailboxes[0], max_depth=2)
-                except Exception as exc:
-                    details = format_exception(exc)
-                    self.startup_logger.write(f"Aviso ao carregar pastas iniciais: {details}")
-                    self._startup_event("startup_warning", details)
-            self.startup_logger.write(f"Pastas carregadas: {len(folders)}")
-            if not self.startup_stop_event.is_set():
-                self._startup_event("progress", (95, "Preparando a interface..."))
-                self._startup_event("result", (list(mailboxes), list(folders)))
-        except Exception as exc:
-            details = format_exception(exc)
-            self.startup_logger.write(f"Erro na inicialização: {details}")
-            self._startup_event("startup_error", details)
-        finally:
-            if com_initialized:
-                pythoncom.CoUninitialize()
-                self.startup_logger.write("COM finalizado no worker")
+                self.startup_logger.write(
+                    f"Fonte ativa={mode}; caixas={len(mailboxes)}; pastas={len(folders)}"
+                )
+                if not self.startup_stop_event.is_set():
+                    self._startup_event("progress", (95, "Preparando a interface..."))
+                    self._startup_event("result", (mode, list(mailboxes), list(folders)))
+                return
+            except Exception as exc:
+                details = format_exception(exc)
+                self.startup_logger.write(f"Falha na conexão com {label}: {details}")
+                if mode == "graph":
+                    graph_error = details
+                    self._startup_event("source_fallback", details)
+                    continue
+                self._startup_event("startup_error", f"Graph: {graph_error}\n\nClassic: {details}")
+                return
+            finally:
+                self._close_source(source)
+
+    def _create_source(self, mode: str, on_authentication=None):
+        from .source_factory import create_email_source
+
+        return create_email_source(
+            on_authentication=on_authentication,
+            parent_window_handle=getattr(self, "window_handle", None),
+            mode=mode,
+        )
+
+    @staticmethod
+    def _close_source(source) -> None:
+        close = getattr(source, "close", None)
+        if callable(close):
+            close()
 
     def _startup_event(self, event: str, value: object) -> None:
         if not self.startup_stop_event.is_set():
@@ -285,7 +329,78 @@ class ExtractorWindow:
     def _show_slow_startup_message(self) -> None:
         self.startup_slow_id = None
         if not self.closing and self.startup_indeterminate:
-            self.loading_status.configure(text="O Outlook está demorando mais que o normal para responder...")
+            self.loading_status.configure(text="O Microsoft Graph está demorando mais que o normal para responder...")
+
+    def _show_graph_authentication(self, flow: dict) -> None:
+        code = str(flow.get("user_code", ""))
+        url = str(flow.get("verification_uri") or flow.get("verification_uri_complete") or "https://microsoft.com/devicelogin")
+        if self.graph_auth_popup is not None and self.graph_auth_popup.winfo_exists():
+            self.graph_auth_popup.destroy()
+        popup = tk.Toplevel(self.root)
+        self.graph_auth_popup = popup
+        popup.title("Entrar no Microsoft Graph")
+        self._set_icon_for(popup)
+        popup.transient(self.root)
+        popup.resizable(False, False)
+        popup.protocol("WM_DELETE_WINDOW", self._close_graph_authentication)
+        popup.bind("<Destroy>", self._on_graph_authentication_destroy, add="+")
+
+        content = ttk.Frame(popup, padding=18)
+        content.pack(fill="both", expand=True)
+        ttk.Label(
+            content,
+            text="A autenticação no Microsoft Graph é necessária.",
+            font=("Segoe UI", 10, "bold"),
+        ).grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 12))
+        ttk.Label(content, text="Código:").grid(row=1, column=0, sticky="w")
+        code_entry = ttk.Entry(content, width=24, font=("Consolas", 11))
+        code_entry.grid(row=1, column=1, sticky="ew", padx=(8, 0))
+        code_entry.insert(0, code)
+        code_entry.configure(state="readonly")
+
+        copy_status = ttk.Label(content, text="")
+
+        def copy_code() -> None:
+            self.root.clipboard_clear()
+            self.root.clipboard_append(code)
+            self.root.update_idletasks()
+            copy_status.configure(text="Código copiado.")
+
+        ttk.Button(content, text="Copiar código", command=copy_code).grid(
+            row=2, column=1, sticky="w", padx=(8, 0), pady=(8, 2)
+        )
+        copy_status.grid(row=3, column=1, sticky="w", padx=(8, 0), pady=(0, 12))
+        ttk.Label(content, text="Acesse:").grid(row=4, column=0, sticky="w")
+        link = tk.Label(
+            content,
+            text=url,
+            foreground="#0563C1",
+            cursor="hand2",
+            font=("Segoe UI", 9, "underline"),
+        )
+        link.grid(row=4, column=1, sticky="w", padx=(8, 0))
+        link.bind("<Button-1>", lambda _event: webbrowser.open(url))
+        ttk.Label(
+            content,
+            text="Conclua o login corporativo. A aplicação continuará automaticamente.",
+            wraplength=430,
+        ).grid(row=5, column=0, columnspan=2, sticky="w", pady=(14, 12))
+        ttk.Button(content, text="Fechar", command=self._close_graph_authentication).grid(
+            row=6, column=0, columnspan=2, sticky="e"
+        )
+        content.columnconfigure(1, weight=1)
+        popup.lift()
+        popup.focus_force()
+
+    def _close_graph_authentication(self) -> None:
+        popup = getattr(self, "graph_auth_popup", None)
+        self.graph_auth_popup = None
+        if popup is not None and popup.winfo_exists():
+            popup.destroy()
+
+    def _on_graph_authentication_destroy(self, event) -> None:
+        if event.widget is self.graph_auth_popup:
+            self.graph_auth_popup = None
 
     def _set_startup_progress(self, value: int, status: str) -> None:
         value = max(0, min(100, int(value)))
@@ -321,14 +436,24 @@ class ExtractorWindow:
         self.folder_combo["values"] = values
         self._folder_options = {value: path for value, (_depth, _name, path) in zip(values, folders)}
         if values:
-            available_paths = {path for _depth, _name, path in folders}
-            if selected_path in available_paths:
+            path_to_index = {path: index for index, (_depth, _name, path) in enumerate(folders)}
+            if selected_path in path_to_index:
+                index = path_to_index[selected_path]
+                self.folder_combo.current(index)
+                self.folder_display.set(values[index])
                 self.folder_path.set(selected_path)
             else:
                 self.folder_combo.current(0)
+                self.folder_display.set(values[0])
                 self.folder_path.set(folders[0][2])
+        else:
+            self.folder_display.set("")
+            self.folder_path.set("")
 
-    def _complete_initialization(self, mailboxes, folders) -> None:
+    def _complete_initialization(self, mode, mailboxes, folders) -> None:
+        self._close_graph_authentication()
+        self.source_mode = mode
+        self._update_source_indicator()
         self._apply_initial_data(mailboxes, folders)
         self._set_startup_progress(100, "Aplicação pronta")
         self.startup_indeterminate = False
@@ -347,22 +472,104 @@ class ExtractorWindow:
     def _show_startup_warning(self) -> None:
         if not self.closing:
             messagebox.showwarning(
-                "Pastas do Outlook indisponíveis",
+                "Pastas do Microsoft Graph indisponíveis",
                 "As caixas foram carregadas, mas não foi possível listar as pastas iniciais. "
                 f"Tente selecionar novamente a caixa. Detalhes técnicos:\n{self.startup_logger.path}",
                 parent=self.root,
             )
 
+    def _update_source_indicator(self, busy: bool = False) -> None:
+        if busy:
+            self.source_indicator.set("● Conectando...")
+            self.source_button.configure(
+                state="disabled", background="#EAECEF", foreground="#57606A"
+            )
+            return
+        is_graph = self.source_mode == "graph"
+        self.source_indicator.set("● Entra ID" if is_graph else "● Classic")
+        self.source_button.configure(
+            state="normal",
+            background="#EAECEF",
+            activebackground="#D8DEE4",
+            foreground="#168A4A" if is_graph else "#CF222E",
+            activeforeground="#168A4A" if is_graph else "#CF222E",
+        )
+
+    def _switch_email_source(self) -> None:
+        if self.source_switch_in_progress or (self.worker and self.worker.is_alive()):
+            return
+        target_mode = "classic" if self.source_mode == "graph" else "graph"
+        self.source_switch_in_progress = True
+        self._update_source_indicator(busy=True)
+        Thread(target=self._switch_source_worker, args=(target_mode,), daemon=True).start()
+
+    def _switch_source_worker(self, target_mode: str) -> None:
+        source = None
+        try:
+            source = self._create_source(
+                target_mode,
+                on_authentication=(
+                    (lambda flow: self._startup_event("graph_auth", flow))
+                    if target_mode == "graph"
+                    else None
+                ),
+            )
+            mailboxes = source.list_mailboxes()
+            folders = (
+                source.list_inbox_folders(mailboxes[0], max_depth=2) if mailboxes else []
+            )
+            self._startup_event(
+                "source_switch_result", (target_mode, list(mailboxes), list(folders))
+            )
+        except Exception as exc:
+            self._startup_event("source_switch_error", (target_mode, format_exception(exc)))
+        finally:
+            self._close_source(source)
+
+    def _complete_source_switch(self, mode, mailboxes, folders) -> None:
+        self._close_graph_authentication()
+        self.source_switch_in_progress = False
+        self.source_mode = mode
+        self._update_source_indicator()
+        self._apply_initial_data(mailboxes, folders)
+        label = "Microsoft Graph (Entra ID)" if mode == "graph" else "Outlook clássico"
+        self._write_log(f"Fonte de pesquisa alterada para: {label}.")
+
+    def _fail_source_switch(self, target_mode: str, details: str) -> None:
+        self._close_graph_authentication()
+        self.source_switch_in_progress = False
+        self._update_source_indicator()
+        label = "Microsoft Graph" if target_mode == "graph" else "Outlook clássico"
+        self.startup_logger.write(f"Falha ao alternar para {label}: {details}")
+        messagebox.showerror(
+            f"{label} indisponível",
+            f"Não foi possível alternar para {label}. A fonte atual foi mantida.\n\n"
+            f"Consulte o log técnico em:\n{self.startup_logger.path}",
+            parent=self.root,
+        )
+
     def _fail_initialization(self, details: str) -> None:
+        self._close_graph_authentication()
         self.startup_indeterminate = False
         self.loading_canvas.itemconfigure(self.loading_arc, outline="#CF222E", extent=-360)
         self.loading_canvas.itemconfigure(self.loading_percent, text="!", fill="#CF222E")
-        self.loading_status.configure(text="Não foi possível conectar ao Outlook", foreground="#CF222E")
+        self.loading_status.configure(text="Não foi possível conectar ao Microsoft Graph", foreground="#CF222E")
         self.loading_detail.configure(text="A interface continuará disponível para uma nova tentativa.")
+        if "Preencha client_id e tenant_id" in details:
+            user_message = (
+                "A conexão ainda não foi configurada. Preencha client_id e tenant_id em:\n\n"
+                "%LOCALAPPDATA%\\PetronectEmailExtractor\\graph_config.json\n\n"
+                "Depois, feche e abra a aplicação novamente. Consulte o README para configurar "
+                "o aplicativo público no Microsoft Entra ID."
+            )
+        else:
+            user_message = (
+                "Não foi possível carregar os dados iniciais pelo Microsoft Graph. "
+                f"Consulte o log técnico em:\n{self.startup_logger.path}"
+            )
         messagebox.showerror(
-            "Outlook indisponível",
-            "Não foi possível carregar os dados iniciais do Outlook. "
-            f"Consulte o log técnico em:\n{self.startup_logger.path}",
+            "Microsoft Graph indisponível",
+            user_message,
             parent=self.root,
         )
         if not self.closing:
@@ -587,7 +794,7 @@ class ExtractorWindow:
         self._set_icon_for(popup)
         popup.transient(self.root)
         popup.resizable(False, False)
-        popup.geometry("640x540")
+        popup.geometry("640x680")
         popup.protocol("WM_DELETE_WINDOW", self._close_about)
         content = ttk.Frame(popup, padding=22)
         content.pack(fill="both", expand=True)
@@ -634,8 +841,22 @@ class ExtractorWindow:
         ).pack(anchor="w")
         self.latest_version_label = ttk.Label(content, text="Última versão: consultando...")
         self.latest_version_label.grid(row=7, column=0, columnspan=2, sticky="w", pady=(14, 0))
+        changelog_frame = ttk.LabelFrame(
+            content,
+            text=f"Resumo das alterações desta versão ({PROJECT_VERSION})",
+            padding=(14, 10),
+        )
+        changelog_frame.grid(
+            row=8, column=0, columnspan=2, sticky="ew", pady=(10, 0)
+        )
+        ttk.Label(
+            changelog_frame,
+            text=CURRENT_CHANGELOG_SUMMARY,
+            justify="left",
+            wraplength=555,
+        ).pack(anchor="w")
         actions = ttk.Frame(content)
-        actions.grid(row=8, column=0, columnspan=2, sticky="e", pady=(18, 0))
+        actions.grid(row=9, column=0, columnspan=2, sticky="e", pady=(18, 0))
         self.update_button = ttk.Button(actions, text="Atualizar", command=self._open_update, state="disabled")
         self.update_button.pack(side="left", padx=(0, 8))
         ttk.Button(actions, text="Fechar", command=self._close_about).pack(side="left")
@@ -752,13 +973,15 @@ class ExtractorWindow:
         link.bind("<Button-1>", lambda _event: webbrowser.open(target))
 
     def _load_mailboxes(self) -> None:
-        from .outlook import OutlookEmailSource, OutlookUnavailableError
-
+        source = None
         try:
-            mailboxes = OutlookEmailSource().list_mailboxes()
-        except OutlookUnavailableError as exc:
+            source = self._create_source(self.source_mode)
+            mailboxes = source.list_mailboxes()
+        except Exception as exc:
             self._write_log(str(exc))
             return
+        finally:
+            self._close_source(source)
         self.mailbox_combo["values"] = mailboxes
         if mailboxes:
             self.mailbox.set(mailboxes[0])
@@ -768,24 +991,27 @@ class ExtractorWindow:
         self._load_inbox_folders()
 
     def _refresh_inbox_folders(self) -> None:
-        """Reload Outlook folders immediately before opening the drop-down."""
+        """Reload folders immediately before opening the drop-down."""
         self._load_inbox_folders(preserve_selection=True)
 
     def _load_inbox_folders(self, preserve_selection: bool = False) -> None:
-        from .outlook import OutlookEmailSource, OutlookUnavailableError
-
         selected_path = self.folder_path.get().strip() if preserve_selection else ""
+        source = None
         try:
-            folders = OutlookEmailSource().list_inbox_folders(self.mailbox.get(), max_depth=2)
-        except OutlookUnavailableError as exc:
+            source = self._create_source(self.source_mode)
+            folders = source.list_inbox_folders(self.mailbox.get(), max_depth=2)
+        except Exception as exc:
             self.folder_combo["values"] = []
+            self.folder_display.set("")
             self.folder_path.set("")
             self._write_log(str(exc))
             return
+        finally:
+            self._close_source(source)
         self._apply_folder_data(folders, selected_path)
 
     def _folder_selected(self, _event=None) -> None:
-        self.folder_path.set(self._folder_options.get(self.folder_combo.get(), ""))
+        self.folder_path.set(self._folder_options.get(self.folder_display.get(), ""))
 
     def _choose_output(self) -> None:
         current_output = Path(self.output_path.get().strip() or default_excel_path())
@@ -830,7 +1056,7 @@ class ExtractorWindow:
         self.open_button.configure(state="disabled")
         self.search_button.configure(state="disabled")
         self.cancel_button.configure(state="normal")
-        self._write_log(f"Iniciando pesquisa em: {criteria.folder_path}")
+        self._write_log(f"Iniciando pesquisa em: {self.folder_display.get().strip()}")
         self.worker = Thread(target=self._worker_run, args=(criteria,), daemon=True)
         self.worker.start()
 
@@ -843,15 +1069,10 @@ class ExtractorWindow:
             )
 
     def _worker_run(self, criteria: SearchCriteria) -> None:
-        com_initialized = False
+        source = None
         try:
-            import pythoncom
             from .export import export_xlsx
-            from .outlook import OutlookEmailSource
-
-            pythoncom.CoInitialize()
-            com_initialized = True
-            source = OutlookEmailSource()
+            source = self._create_source(self.source_mode)
             records = source.iter_matching(
                 criteria,
                 self._queue_progress,
@@ -868,8 +1089,7 @@ class ExtractorWindow:
         except Exception as exc:
             self.progress_queue.put(("error", format_exception(exc)))
         finally:
-            if com_initialized:
-                pythoncom.CoUninitialize()
+            self._close_source(source)
 
     def _queue_progress(self, message: str) -> None:
         self.progress_queue.put(("log", message))
@@ -889,12 +1109,25 @@ class ExtractorWindow:
                 elif event == "indeterminate":
                     self._set_startup_indeterminate(str(value))
                 elif event == "result":
-                    mailboxes, folders = value
-                    self._complete_initialization(mailboxes, folders)
+                    mode, mailboxes, folders = value
+                    self._complete_initialization(mode, mailboxes, folders)
                 elif event == "startup_error":
                     self._fail_initialization(str(value))
                 elif event == "startup_warning":
                     self._show_startup_warning()
+                elif event == "source_fallback":
+                    self._close_graph_authentication()
+                    self._set_startup_indeterminate(
+                        "Microsoft Graph indisponível. Conectando ao Outlook clássico..."
+                    )
+                elif event == "source_switch_result":
+                    mode, mailboxes, folders = value
+                    self._complete_source_switch(mode, mailboxes, folders)
+                elif event == "source_switch_error":
+                    mode, details = value
+                    self._fail_source_switch(mode, details)
+                elif event == "graph_auth":
+                    self._show_graph_authentication(value)
         except Empty:
             pass
         try:
@@ -1023,6 +1256,7 @@ class ExtractorWindow:
         for item in runtime_metadata():
             self._write_detail(item)
         self._write_detail(f"caixa={self.mailbox.get().strip()}")
+        self._write_detail(f"pasta_selecionada={self.folder_display.get().strip()}")
         self._write_detail(f"pasta={self.folder_path.get().strip()}")
         self._write_detail("formato_data_interface=DD/MM/AAAA HH:MM")
         self._write_detail("normalizacao_data=componentes_numericos_ano_mes_dia")
